@@ -3,7 +3,7 @@
 [![C11](https://img.shields.io/badge/C-11-blue)](https://en.cppreference.com/w/c/11)
 [![RouterOS](https://img.shields.io/badge/RouterOS-tested%207.23.3-293239)](https://mikrotik.com/)
 [![Architecture](https://img.shields.io/badge/arch-ARM64-6a5acd)](#requirements)
-[![Stage](https://img.shields.io/badge/status-pilot-orange)](#project-status)
+[![Stage](https://img.shields.io/badge/status-pilot-orange)](https://github.com/Fiark/susanin/releases/tag/v0.11.3)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Fiark/susanin?include_prereleases&label=pilot%20release)](https://github.com/Fiark/susanin/releases/tag/v0.11.3)
 [![Downloads](https://img.shields.io/github/downloads/Fiark/susanin/total?label=downloads)](https://github.com/Fiark/susanin/releases)
