@@ -10,6 +10,29 @@
 [![Stage](https://img.shields.io/badge/status-pilot-orange)](#статус-проекта)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+
+[![Release](https://img.shields.io/github/v/release/Fiark/susanin?include_prereleases&label=pilot%20release)](https://github.com/Fiark/susanin/releases/tag/v0.11.3)
+[![Downloads](https://img.shields.io/github/downloads/Fiark/susanin/total?label=downloads)](https://github.com/Fiark/susanin/releases)
+
+> [!IMPORTANT]
+> ### Скачать готовую пилотную версию
+>
+> **Текущий публичный Release: [Susanin v0.11.3 — pilot](https://github.com/Fiark/susanin/releases/tag/v0.11.3)**
+>
+> Для обычной установки нужны только два файла:
+>
+> - **[susanin.tar](https://github.com/Fiark/susanin/releases/download/v0.11.3/susanin.tar)** — ARM64 container image;
+> - **[install.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.3/install.rsc)** — автоматический bootstrap для RouterOS.
+>
+> Дополнительно:
+>
+> - [SHA256SUMS](https://github.com/Fiark/susanin/releases/download/v0.11.3/SHA256SUMS) — контрольные суммы;
+> - [uninstall.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.3/uninstall.rsc) — полное удаление Susanin;
+> - [uninstall-controller.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.3/uninstall-controller.rsc) — удалить только controller.
+>
+> **Перед установкой обязательно сделайте backup MikroTik.**
+
+
 ![Susanin](docs/images/hero.svg)
 
 **Сусанин** пытается понять, какие направления у клиента реально ломаются при обычном прямом доступе, проверяет их повторной попыткой через выбранный туннель и временно запоминает рабочий путь. Вместо ручного ведения тысяч доменов и IP используется поведение соединений в RouterOS `connection tracking`.
