@@ -36,7 +36,6 @@
 
 ![Susanin](docs/images/hero.svg)
 
-> **Pilot / experimental.** ARM64 only for the current public pilot. Tested on RouterOS 7.23.3. Back up your router before installation.
 
 Susanin watches RouterOS connection-tracking behavior, tests suspicious destinations through a selected route-based tunnel and temporarily remembers whether TCP or UDP works better through that tunnel. It is intentionally not a domain/IP blocklist manager.
 
@@ -44,7 +43,7 @@ The project was inspired by [timbrs/amneziawg-mikrotik-c](https://github.com/tim
 
 ## Quick start
 
-Requirements:
+### Requirements
 
 - ARM64 MikroTik;
 - RouterOS 7.23.3 is the tested baseline;
