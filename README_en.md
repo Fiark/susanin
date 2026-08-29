@@ -1,5 +1,41 @@
 # Susanin — adaptive VPN routing for MikroTik
 
+[![C11](https://img.shields.io/badge/C-11-blue)](https://en.cppreference.com/w/c/11)
+[![RouterOS](https://img.shields.io/badge/RouterOS-tested%207.23.3-293239)](https://mikrotik.com/)
+[![Architecture](https://img.shields.io/badge/arch-ARM64-6a5acd)](#requirements)
+[![Stage](https://img.shields.io/badge/status-pilot-orange)](#project-status)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Fiark/susanin?include_prereleases&label=pilot%20release)](https://github.com/Fiark/susanin/releases/tag/v0.11.3)
+[![Downloads](https://img.shields.io/github/downloads/Fiark/susanin/total?label=downloads)](https://github.com/Fiark/susanin/releases)
+
+> [!WARNING]
+> **PILOT / EXPERIMENTAL**
+>
+> Susanin is an early-stage project that changes RouterOS routing and firewall objects.
+>
+> Back up your MikroTik before installation.
+>
+> The current public build targets **ARM64**.  
+> Reference test platform: **RouterOS 7.23.3**.
+
+> [!IMPORTANT]
+> ### Download the current pilot release
+>
+> **[Susanin v0.11.3 — pilot](https://github.com/Fiark/susanin/releases/tag/v0.11.3)**
+>
+> Normal installation requires only:
+>
+> - **[susanin.tar](https://github.com/Fiark/susanin/releases/download/v0.11.3/susanin.tar)** — ARM64 container image
+> - **[install.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.3/install.rsc)** — RouterOS credentialless bootstrap
+>
+> Additional files:
+>
+> - [SHA256SUMS](https://github.com/Fiark/susanin/releases/download/v0.11.3/SHA256SUMS)
+> - [uninstall.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.3/uninstall.rsc)
+> - [uninstall-controller.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.3/uninstall-controller.rsc)
+
+![Susanin](docs/images/hero.svg)
+
 > **Pilot / experimental.** ARM64 only for the current public pilot. Tested on RouterOS 7.23.3. Back up your router before installation.
 
 Susanin watches RouterOS connection-tracking behavior, tests suspicious destinations through a selected route-based tunnel and temporarily remembers whether TCP or UDP works better through that tunnel. It is intentionally not a domain/IP blocklist manager.
