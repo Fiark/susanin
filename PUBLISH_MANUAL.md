@@ -67,7 +67,7 @@ PASS: no credential artifacts detected
 Дополнительно:
 
 ```bash
-grep -RInE 'PRIVATE KEY|BEGIN .*PRIVATE|password=|AUTOAWG_ROUTER_PASSWORD|show-sensitive' . \
+grep -RInE 'PRIVATE KEY|BEGIN .*PRIVATE|password=|ROUTER_(USER|PASSWORD)|show-sensitive' . \
   --exclude-dir=.git || true
 ```
 
