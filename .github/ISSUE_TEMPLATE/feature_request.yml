@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest a Susanin improvement
+title: "[feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Routing / rollback implications
+      description: If this changes RouterOS state, explain expected fail-open and rollback behavior.

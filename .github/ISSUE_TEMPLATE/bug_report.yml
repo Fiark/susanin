@@ -1,0 +1,48 @@
+name: Bug report
+about: Report a reproducible Susanin problem
+title: "[bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Susanin is a pilot project. Please sanitize all logs. Never attach RouterOS backups, show-sensitive exports, VPN private keys or passwords.
+  - type: input
+    id: version
+    attributes:
+      label: Susanin version
+      placeholder: 0.11.3
+    validations:
+      required: true
+  - type: input
+    id: routeros
+    attributes:
+      label: RouterOS version
+      placeholder: 7.23.3
+    validations:
+      required: true
+  - type: input
+    id: arch
+    attributes:
+      label: Architecture / device family
+      placeholder: ARM64 / hAP ax3 (do not include serial number)
+    validations:
+      required: true
+  - type: textarea
+    id: topology
+    attributes:
+      label: Network/tunnel topology
+      description: LAN list, tunnel type, whether a routing table already existed. Do not include secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized status/logs
+      description: Prefer `susanin status`, `apply --dry-run`, and relevant `AUTO-AWG:` lines.

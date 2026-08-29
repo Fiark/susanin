@@ -1,0 +1,14 @@
+susanin
+src/*.o
+*.env
+.env
+*.backup
+*.rsc
+!bootstrap/*.rsc
+*.log
+*.zip
+*.tar
+*.tar.gz
+secrets/
+susanin-secrets/
+.DS_Store

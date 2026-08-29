@@ -1,0 +1,82 @@
+:if ([/system script job print count-only as-value where script=[:jobname]] > 1) do={ :return }
+:local healthRule [/ip firewall mangle find where comment="AUTO-AWG: L1 mark test"]
+:if ([:len $healthRule] = 0) do={ :return }
+:if ([/ip firewall mangle get $healthRule disabled] = true) do={ :return }
+:foreach c in=[/ip firewall connection print as-value where protocol=tcp and tcp-state=established] do={
+  :local id ($c->".id"); :local src [:toip ($c->"src-address")]; :local dst [:toip ($c->"dst-address")]; :local port ($c->"dst-port")
+  :local mark [:tostr ($c->"connection-mark")]; :local op ($c->"orig-packets"); :local rp ($c->"repl-packets"); :local ob ($c->"orig-bytes"); :local rb ($c->"repl-bytes")
+  :local orate [:tostr ($c->"orig-rate")]; :local rrate [:tostr ($c->"repl-rate")]
+  {{LAN_MATCH}}
+  :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true)) do={
+    :if (!(($dst in 0.0.0.0/8) || ($dst in 10.0.0.0/8) || ($dst in 100.64.0.0/10) || ($dst in 127.0.0.0/8) || ($dst in 169.254.0.0/16) || ($dst in 172.16.0.0/12) || ($dst in 192.168.0.0/16) || ($dst in 224.0.0.0/4) || ($dst in 240.0.0.0/4))) do={
+      :local trigger false; :local reason ""; :local suspicious false
+      :if (($op >= 5) && ($ob >= 1000) && ($rp <= 2) && ($rb < 256)) do={ :set trigger true; :set reason "TCP-STALL" }
+      :local origActive true; :local replSilent false
+      :if (($orate = "") || ($orate = "0") || ($orate = "0bps")) do={ :set origActive false }
+      :if (($rrate = "") || ($rrate = "0") || ($rrate = "0bps")) do={ :set replSilent true }
+      :if (($trigger = false) && ($op >= 8) && ($rp > 0) && ($origActive = true) && ($replSilent = true)) do={ :set suspicious true }
+      :if (($trigger = false) && ($suspicious = true)) do={
+        :local wid [/ip firewall address-list find where list="auto_awg_watch_tcp" and address=$dst]
+        :if ([:len $wid] = 0) do={
+          :if (([:len [/ip firewall address-list find where list="auto_awg_ok_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_tcp" and address=$dst]] = 0)) do={
+            /ip firewall address-list add list=auto_awg_watch_tcp address=$dst timeout=8s comment=("TCP-LATE-STALL " . [:tostr $port])
+          }
+        } else={
+          :local left [/ip firewall address-list get $wid timeout]
+          :if ($left <= 4s) do={ :set trigger true; :set reason "TCP-LATE-STALL" }
+        }
+      }
+      :if ($trigger = true) do={
+        :if (([:len [/ip firewall address-list find where list="auto_awg_ok_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_tcp" and address=$dst]] = 0)) do={
+          /ip firewall address-list remove [find where list="auto_awg_watch_tcp" and address=$dst]
+          /ip firewall address-list add list=auto_awg_test_tcp address=$dst timeout=1m comment=($reason . " " . [:tostr $port])
+          :log warning ("AUTO-AWG: SOFT " . $reason . " " . [:tostr $dst] . ":" . [:tostr $port])
+          :onerror err in={ /ip firewall connection remove $id } do={}
+        }
+      }
+    }
+  }
+}
+:foreach c in=[/ip firewall connection print as-value where protocol=udp and seen-reply=no] do={
+  :local id ($c->".id"); :local src [:toip ($c->"src-address")]; :local dst [:toip ($c->"dst-address")]; :local port ($c->"dst-port")
+  :local mark [:tostr ($c->"connection-mark")]; :local op ($c->"orig-packets"); :local rp ($c->"repl-packets")
+  {{LAN_MATCH}}
+  :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true) && ($port != 443) && ($port != 53) && ($port != 67) && ($port != 68) && ($port != 123) && ($op >= 12) && ($rp = 0)) do={
+    :if (!(($dst in 0.0.0.0/8) || ($dst in 10.0.0.0/8) || ($dst in 100.64.0.0/10) || ($dst in 127.0.0.0/8) || ($dst in 169.254.0.0/16) || ($dst in 172.16.0.0/12) || ($dst in 192.168.0.0/16) || ($dst in 224.0.0.0/4) || ($dst in 240.0.0.0/4))) do={
+      :if (([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_udp" and address=$dst]] = 0)) do={
+        /ip firewall address-list remove [find where list="auto_awg_watch_udp" and address=$dst]
+        /ip firewall address-list add list=auto_awg_test_udp address=$dst timeout=1m comment=("UDP " . [:tostr $port])
+        :log warning ("AUTO-AWG: SOFT UDP " . [:tostr $dst] . ":" . [:tostr $port])
+        :onerror err in={ /ip firewall connection remove $id } do={}
+      }
+    }
+  }
+}
+:foreach c in=[/ip firewall connection print as-value where protocol=udp and dst-port=443 and seen-reply=yes] do={
+  :local id ($c->".id"); :local src [:toip ($c->"src-address")]; :local dst [:toip ($c->"dst-address")]; :local mark [:tostr ($c->"connection-mark")]
+  :local op ($c->"orig-packets"); :local orate [:tostr ($c->"orig-rate")]; :local rrate [:tostr ($c->"repl-rate")]
+  {{LAN_MATCH}}
+  :local origActive true; :local replSilent false
+  :if (($orate = "") || ($orate = "0") || ($orate = "0bps")) do={ :set origActive false }
+  :if (($rrate = "") || ($rrate = "0") || ($rrate = "0bps")) do={ :set replSilent true }
+  :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true) && ($op >= 8) && ($origActive = true) && ($replSilent = true)) do={
+    :if (!(($dst in 0.0.0.0/8) || ($dst in 10.0.0.0/8) || ($dst in 100.64.0.0/10) || ($dst in 127.0.0.0/8) || ($dst in 169.254.0.0/16) || ($dst in 172.16.0.0/12) || ($dst in 192.168.0.0/16) || ($dst in 224.0.0.0/4) || ($dst in 240.0.0.0/4))) do={
+      :local wid [/ip firewall address-list find where list="auto_awg_watch_udp" and address=$dst]
+      :if ([:len $wid] = 0) do={
+        :if (([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_udp" and address=$dst]] = 0)) do={
+          /ip firewall address-list add list=auto_awg_watch_udp address=$dst timeout=8s comment="QUIC-LATE-STALL 443"
+        }
+      } else={
+        :local left [/ip firewall address-list get $wid timeout]
+        :if ($left <= 4s) do={
+          :if (([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_udp" and address=$dst]] = 0)) do={
+            /ip firewall address-list remove $wid
+            /ip firewall address-list add list=auto_awg_test_udp address=$dst timeout=1m comment="QUIC-LATE-STALL 443"
+            :log warning ("AUTO-AWG: SOFT QUIC-LATE-STALL " . [:tostr $dst] . ":443")
+            :onerror err in={ /ip firewall connection remove $id } do={}
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build C11 with strict warnings
+        run: |
+          make clean
+          make CFLAGS='-O2 -pipe -std=c11 -Wall -Wextra -Wpedantic -Werror'
+          ./susanin version
+      - name: Secret hygiene scan
+        run: |
+          chmod +x tools/secret-scan.sh
+          ./tools/secret-scan.sh .
+      - name: Dockerfile smoke build
+        run: docker build --no-cache -t susanin:ci .

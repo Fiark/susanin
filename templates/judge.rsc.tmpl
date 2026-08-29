@@ -1,0 +1,84 @@
+:if ([/system script job print count-only as-value where script=[:jobname]] > 1) do={ :return }
+:local healthRule [/ip firewall mangle find where comment="AUTO-AWG: L1 mark test"]
+:if ([:len $healthRule] = 0) do={ :return }
+:if ([/ip firewall mangle get $healthRule disabled] = true) do={ :return }
+:foreach c in=[/ip firewall connection print as-value where connection-mark=auto-awg-test-conn] do={
+  :local id ($c->".id"); :local src [:toip ($c->"src-address")]; :local dst [:toip ($c->"dst-address")]; :local port ($c->"dst-port"); :local proto [:tostr ($c->"protocol")]
+  :local op ($c->"orig-packets"); :local rp ($c->"repl-packets"); :local ob ($c->"orig-bytes"); :local rb ($c->"repl-bytes")
+  {{LAN_MATCH}}
+  :if ($fromLAN = true) do={
+    :local testList ""; :local okList ""; :local watchList ""; :local coolList ""
+    :if ($proto = "tcp") do={ :set testList "auto_awg_test_tcp"; :set okList "auto_awg_ok_tcp"; :set watchList "auto_awg_watch_tcp"; :set coolList "auto_awg_cooldown_tcp" }
+    :if ($proto = "udp") do={ :set testList "auto_awg_test_udp"; :set okList "auto_awg_ok_udp"; :set watchList "auto_awg_watch_udp"; :set coolList "auto_awg_cooldown_udp" }
+    :if (($testList != "") && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] > 0)) do={
+      :local good false; :local failed false
+      :if ($proto = "tcp") do={
+        :local state [:tostr ($c->"tcp-state")]
+        :if (($rp >= 2) || ($rb >= 128)) do={ :set good true }
+        :if (($state = "syn-sent") && ($op >= 3) && ($rp = 0)) do={ :set failed true }
+        :if (($state = "established") && ($op >= 10) && ($ob >= 3000) && ($rp <= 1) && ($rb < 128)) do={ :set failed true }
+      }
+      :if ($proto = "udp") do={
+        :if ($rp >= 1) do={ :set good true }
+        :if (($port = 443) && ($op >= 10) && ($rp = 0)) do={ :set failed true }
+        :if (($port != 443) && ($op >= 20) && ($rp = 0)) do={ :set failed true }
+      }
+      :if ($good = true) do={
+        :if ([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) do={
+          /ip firewall address-list add list=$okList address=$dst timeout=6h comment=("AUTO confirmed " . $proto . ":" . [:tostr $port])
+          :log info ("AUTO-AWG: CONFIRMED " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+        }
+        /ip firewall address-list remove [find where list=$testList and address=$dst]
+        /ip firewall address-list remove [find where list=$watchList and address=$dst]
+        /ip firewall address-list remove [find where list=$coolList and address=$dst]
+      }
+      :if (($good = false) && ($failed = true)) do={
+        /ip firewall address-list remove [find where list=$testList and address=$dst]
+        /ip firewall address-list remove [find where list=$watchList and address=$dst]
+        :if ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0) do={
+          /ip firewall address-list add list=$coolList address=$dst timeout=5m comment=("DIRECT+AWG failed " . $proto . ":" . [:tostr $port])
+        }
+        :onerror err in={ /ip firewall connection remove $id } do={}
+      }
+    }
+  }
+}
+:foreach c in=[/ip firewall connection print as-value where connection-mark=auto-awg-ok-conn] do={
+  :local id ($c->".id"); :local src [:toip ($c->"src-address")]; :local dst [:toip ($c->"dst-address")]; :local port ($c->"dst-port"); :local proto [:tostr ($c->"protocol")]
+  :local op ($c->"orig-packets"); :local rp ($c->"repl-packets"); :local ob ($c->"orig-bytes"); :local rb ($c->"repl-bytes")
+  {{LAN_MATCH}}
+  :if ($fromLAN = true) do={
+    :local okList ""; :local testList ""; :local watchList ""; :local coolList ""
+    :if ($proto = "tcp") do={ :set okList "auto_awg_ok_tcp"; :set testList "auto_awg_test_tcp"; :set watchList "auto_awg_watch_tcp"; :set coolList "auto_awg_cooldown_tcp" }
+    :if ($proto = "udp") do={ :set okList "auto_awg_ok_udp"; :set testList "auto_awg_test_udp"; :set watchList "auto_awg_watch_udp"; :set coolList "auto_awg_cooldown_udp" }
+    :if ($okList != "") do={
+      :local okId [/ip firewall address-list find where list=$okList and address=$dst]
+      :if ([:len $okId] > 0) do={
+        :local failed false; :local healthy false
+        :if ($proto = "tcp") do={
+          :local state [:tostr ($c->"tcp-state")]
+          :if (($rp >= 2) || ($rb >= 128)) do={ :set healthy true }
+          :if (($state = "syn-sent") && ($op >= 4) && ($rp = 0)) do={ :set failed true }
+          :if (($state = "established") && ($op >= 15) && ($ob >= 5000) && ($rp <= 1) && ($rb < 128)) do={ :set failed true }
+        }
+        :if ($proto = "udp") do={ :if ($rp >= 1) do={ :set healthy true }; :if (($port = 443) && ($op >= 16) && ($rp = 0)) do={ :set failed true } }
+        :if ($failed = true) do={
+          /ip firewall address-list remove [find where list=$okList and address=$dst]
+          /ip firewall address-list remove [find where list=$testList and address=$dst]
+          /ip firewall address-list remove [find where list=$watchList and address=$dst]
+          :if ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0) do={ /ip firewall address-list add list=$coolList address=$dst timeout=30s comment=("Confirmed AWG " . $proto . " route failed") }
+          :onerror err in={ /ip firewall connection remove $id } do={}
+        } else={
+          :if ($healthy = true) do={
+            :local left [/ip firewall address-list get $okId timeout]
+            :if ($left <= 3h) do={
+              :local oldComment [:tostr [/ip firewall address-list get $okId comment]]
+              /ip firewall address-list remove $okId
+              /ip firewall address-list add list=$okList address=$dst timeout=6h comment=$oldComment
+            }
+          }
+        }
+      }
+    }
+  }
+}

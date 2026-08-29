@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1250" height="555" viewBox="0 0 1250 555">
+<rect width="100%" height="100%" rx="14" fill="#111827"/>
+<rect x="0" y="0" width="100%" height="42" rx="14" fill="#1f2937"/>
+<circle cx="24" cy="21" r="6" fill="#ef4444"/><circle cx="44" cy="21" r="6" fill="#f59e0b"/><circle cx="64" cy="21" r="6" fill="#10b981"/>
+<text x="90" y="27" font-family="DejaVu Sans, sans-serif" font-size="14" fill="#d1d5db">Susanin setup — example</text>
+<text x="22" y="52" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db">Project: Susanin</text>
+<text x="22" y="77" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db">Router: 172.31.254.1:8728</text>
+<text x="22" y="102" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db">Auth: auto-provisioned local agent</text>
+<text x="22" y="127" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db"></text>
+<text x="22" y="152" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db">Connecting...</text>
+<text x="22" y="177" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#86efac">Authenticated.</text>
+<text x="22" y="202" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db"></text>
+<text x="22" y="227" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#fcd34d">=== SUSANIN FIRST-RUN SETUP ===</text>
+<text x="22" y="252" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db">LAN: interface-list=LAN (1 member)</text>
+<text x="22" y="277" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db"></text>
+<text x="22" y="302" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db">Choose the VPN/tunnel interface where blocked traffic should go:</text>
+<text x="22" y="327" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db">  1) wg-vpn                   type=wg         running</text>
+<text x="22" y="352" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#93c5fd">Selection: 1</text>
+<text x="22" y="377" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#86efac">Routing table auto-detected: vpn</text>
+<text x="22" y="402" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db"></text>
+<text x="22" y="427" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#fcd34d">=== SUSANIN FRESH INSTALL ===</text>
+<text x="22" y="452" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#86efac">Fresh install result: SUCCESS</text>
+<text x="22" y="477" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db">  scripts=4 schedulers=4 mangle=8 safety=3</text>
+<text x="22" y="502" font-family="DejaVu Sans Mono, monospace" font-size="15" fill="#d1d5db">  data-plane started</text>
+</svg>

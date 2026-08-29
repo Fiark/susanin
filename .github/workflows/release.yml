@@ -1,0 +1,56 @@
+name: Release ARM64 artifacts
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag/release to build (example: v0.11.3)'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build RouterOS ARM64 image
+        shell: bash
+        run: |
+          set -euxo pipefail
+          TAG='${{ github.event.inputs.tag || github.ref_name }}'
+          VERSION="${TAG#v}"
+          mkdir -p dist
+          docker buildx build \
+            --platform linux/arm64 \
+            --no-cache \
+            -t "susanin:${VERSION}" \
+            --output type=docker,dest=dist/susanin.tar \
+            .
+          cp bootstrap/install.rsc dist/install.rsc
+          cp bootstrap/uninstall.rsc dist/uninstall.rsc
+          cp bootstrap/uninstall-controller.rsc dist/uninstall-controller.rsc
+          (cd dist && sha256sum susanin.tar install.rsc uninstall.rsc uninstall-controller.rsc > SHA256SUMS)
+
+      - name: Create/attach prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --title "$TAG — pilot" --generate-notes --prerelease
+          gh release upload "$TAG" dist/* --clobber
