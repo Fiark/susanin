@@ -160,8 +160,19 @@ int main(int argc, char **argv) {
     }
 
     if (daemon) {
+        app_config_t daemon_cfg;
+
+        if (config_load_local(&daemon_cfg) == 0) {
+            (void)diag_event(
+                &daemon_cfg,
+                "controller_start",
+                "Susanin controller daemon started"
+            );
+        }
+
         printf("Susanin controller is running. Use RouterOS /container/shell with `susanin setup` for first-run setup.\n");
         fflush(stdout);
+
         for (;;) sleep(3600);
     }
 
@@ -194,6 +205,24 @@ int main(int argc, char **argv) {
                 return 2;
             }
 
+            if (cfg.diagnostics_enabled) {
+                char event_message[256];
+
+                snprintf(
+                    event_message,
+                    sizeof(event_message),
+                    "%s=%s",
+                    argv[3],
+                    argv[4]
+                );
+
+                (void)diag_event(
+                    &cfg,
+                    "config_change",
+                    event_message
+                );
+            }
+
             printf("Susanin setting saved.\n\n");
             config_print_settings(&cfg);
             return 0;
@@ -214,19 +243,49 @@ int main(int argc, char **argv) {
 
     if (config_load(&cfg) < 0) return 2;
 
+    (void)diag_event(
+        &cfg,
+        "command_start",
+        argv[1]
+    );
+
     config_print_safe(&cfg);
     printf("\nConnecting...\n");
 
     ros_client_t ros;
     if (ros_connect(&ros, cfg.host, cfg.port) < 0) {
+        (void)diag_event(
+            &cfg,
+            "routeros_error",
+            "RouterOS API connection failed"
+        );
+
         fprintf(stderr, "Cannot connect to RouterOS API at %s:%u\n", cfg.host, (unsigned)cfg.port);
         return 1;
     }
+
+    (void)diag_event(
+        &cfg,
+        "routeros_connected",
+        "RouterOS API connection established"
+    );
     if (ros_login(&ros, cfg.user, cfg.password) < 0) {
+        (void)diag_event(
+            &cfg,
+            "routeros_error",
+            "RouterOS API authentication failed"
+        );
+
         fprintf(stderr, "RouterOS API login failed\n");
         ros_close(&ros);
         return 1;
     }
+
+    (void)diag_event(
+        &cfg,
+        "routeros_authenticated",
+        "RouterOS API authentication succeeded"
+    );
 
     printf("Authenticated.\n\n");
     int rc;
@@ -246,5 +305,24 @@ int main(int argc, char **argv) {
     else rc = discovery_run(&ros, &cfg, plan);
 
     ros_close(&ros);
+
+    {
+        char event_message[256];
+
+        snprintf(
+            event_message,
+            sizeof(event_message),
+            "%s rc=%d",
+            argv[1],
+            rc
+        );
+
+        (void)diag_event(
+            &cfg,
+            "command_finish",
+            event_message
+        );
+    }
+
     return rc == 0 ? 0 : 1;
 }
