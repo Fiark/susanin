@@ -132,6 +132,29 @@ static char *lan_match_snippet(const render_ctx_t *ctx) {
     return buf;
 }
 
+static int log_level_rank(const char *level) {
+    if (!level) return 2;
+
+    if (strcmp(level, "quiet") == 0) return 0;
+    if (strcmp(level, "error") == 0) return 1;
+    if (strcmp(level, "info") == 0) return 2;
+    if (strcmp(level, "debug") == 0) return 3;
+    if (strcmp(level, "trace") == 0) return 4;
+
+    return 2;
+}
+
+static const char *log_enabled(
+    const app_config_t *cfg,
+    int required_rank
+) {
+    return log_level_rank(
+        cfg ? cfg->log_level : NULL
+    ) >= required_rank
+        ? "true"
+        : "false";
+}
+
 static char *load_template(const char *name) {
     char path[512];
     snprintf(path, sizeof(path), "/usr/share/susanin/templates/%s", name);
@@ -162,10 +185,34 @@ static int render_one(const char *tmpl_name, const char *script_name,
     free(c);
     if (!d) return -1;
 
+    char *e = replace_all(
+        d,
+        "{{LOG_ERROR}}",
+        log_enabled(cfg, 1)
+    );
+    free(d);
+    if (!e) return -1;
+
+    char *f = replace_all(
+        e,
+        "{{LOG_INFO}}",
+        log_enabled(cfg, 2)
+    );
+    free(e);
+    if (!f) return -1;
+
+    char *g = replace_all(
+        f,
+        "{{LOG_DEBUG}}",
+        log_enabled(cfg, 3)
+    );
+    free(f);
+    if (!g) return -1;
+
     snprintf(out->name, sizeof(out->name), "%s", script_name);
-    out->source = d;
-    out->bytes = strlen(d);
-    susanin_fingerprint_hex(d, out->fp);
+    out->source = g;
+    out->bytes = strlen(g);
+    susanin_fingerprint_hex(g, out->fp);
     return 0;
 }
 

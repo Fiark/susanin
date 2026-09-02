@@ -26,7 +26,7 @@
       :if ($good = true) do={
         :if ([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) do={
           /ip firewall address-list add list=$okList address=$dst timeout=6h comment=("AUTO confirmed " . $proto . ":" . [:tostr $port])
-          :log info ("AUTO-AWG: CONFIRMED " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+          :if ({{LOG_INFO}}) do={ :log info ("AUTO-AWG: CONFIRMED " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port]) }
         }
         /ip firewall address-list remove [find where list=$testList and address=$dst]
         /ip firewall address-list remove [find where list=$watchList and address=$dst]

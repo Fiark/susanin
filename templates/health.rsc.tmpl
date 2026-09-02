@@ -35,7 +35,7 @@
         }
       }
     }
-    :log info ("AUTO-AWG: tunnel UP, recovery TCP=" . [:tostr $recoveredTCP] . " UDP=" . [:tostr $recoveredUDP])
+    :if ({{LOG_INFO}}) do={ :log info ("AUTO-AWG: tunnel UP, recovery TCP=" . [:tostr $recoveredTCP] . " UDP=" . [:tostr $recoveredUDP]) }
   }
   :return
 }
@@ -53,4 +53,4 @@
 /ip firewall address-list remove [find where list="auto_awg_test_tcp"]
 /ip firewall address-list remove [find where list="auto_awg_watch_udp"]
 /ip firewall address-list remove [find where list="auto_awg_test_udp"]
-:log warning "AUTO-AWG: tunnel DOWN after 2 health misses, fallback to DIRECT"
+:if ({{LOG_ERROR}}) do={ :log warning "AUTO-AWG: tunnel DOWN after 2 health misses, fallback to DIRECT" }
