@@ -15,7 +15,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#define SUSANIN_VERSION "0.11.3"
+#define SUSANIN_VERSION "0.11.4-dev"
 
 static void usage(const char *argv0) {
     fprintf(stderr,
@@ -68,6 +68,8 @@ int main(int argc, char **argv) {
     int install_dry = 0;
     int install = 0;
     int daemon = 0;
+    int config_show = 0;
+    int config_set = 0;
 
     if (argc == 2 && strcmp(argv[1], "discover") == 0) {
         /* read-only */
@@ -99,6 +101,18 @@ int main(int argc, char **argv) {
         install_dry = 1;
     } else if (argc == 2 && strcmp(argv[1], "install") == 0) {
         install = 1;
+    } else if (
+        argc == 3 &&
+        strcmp(argv[1], "config") == 0 &&
+        strcmp(argv[2], "show") == 0
+    ) {
+        config_show = 1;
+    } else if (
+        argc == 5 &&
+        strcmp(argv[1], "config") == 0 &&
+        strcmp(argv[2], "set") == 0
+    ) {
+        config_set = 1;
     } else if (argc == 2 && strcmp(argv[1], "daemon") == 0) {
         daemon = 1;
     } else if (argc == 2 && strcmp(argv[1], "apply") == 0) {
@@ -116,6 +130,32 @@ int main(int argc, char **argv) {
     }
 
     app_config_t cfg;
+
+    if (config_show || config_set) {
+        if (config_load_local(&cfg) < 0) {
+            return 2;
+        }
+
+        if (config_show) {
+            config_print_settings(&cfg);
+            return 0;
+        }
+
+        if (
+            config_set_option(
+                &cfg,
+                argv[3],
+                argv[4]
+            ) < 0
+        ) {
+            return 2;
+        }
+
+        printf("Susanin setting saved.\n\n");
+        config_print_settings(&cfg);
+        return 0;
+    }
+
     if (config_load(&cfg) < 0) return 2;
 
     config_print_safe(&cfg);
