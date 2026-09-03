@@ -2,6 +2,7 @@
 #include "config.h"
 #include "diag.h"
 #include "telemetry.h"
+#include "routerlog.h"
 #include "discovery.h"
 #include "routeros_api.h"
 #include "status.h"
@@ -55,7 +56,9 @@ static void usage(const char *argv0) {
         "  %s diag status\n"
         "  %s diag start\n"
         "  %s diag stop\n"
-        "  %s diag sample\n",
+        "  %s diag sample\n"
+        "  %s diag errors\n",
+        argv0,
         argv0,
         argv0,
         argv0,
@@ -92,6 +95,7 @@ int main(int argc, char **argv) {
     int diag_start_cmd = 0;
     int diag_stop_cmd = 0;
     int diag_sample_cmd = 0;
+    int diag_errors_cmd = 0;
 
     if (argc == 2 && strcmp(argv[1], "discover") == 0) {
         /* read-only */
@@ -159,6 +163,12 @@ int main(int argc, char **argv) {
         strcmp(argv[2], "sample") == 0
     ) {
         diag_sample_cmd = 1;
+    } else if (
+        argc == 3 &&
+        strcmp(argv[1], "diag") == 0 &&
+        strcmp(argv[2], "errors") == 0
+    ) {
+        diag_errors_cmd = 1;
     } else if (argc == 2 && strcmp(argv[1], "daemon") == 0) {
         daemon = 1;
     } else if (argc == 2 && strcmp(argv[1], "apply") == 0) {
@@ -299,7 +309,8 @@ int main(int argc, char **argv) {
 
     printf("Authenticated.\n\n");
     int rc;
-    if (diag_sample_cmd) rc = telemetry_collect_once(&ros, &cfg);
+    if (diag_errors_cmd) rc = routerlog_collect_errors(&ros, &cfg);
+    else if (diag_sample_cmd) rc = telemetry_collect_once(&ros, &cfg);
     else if (setup) rc = setup_run(&ros, &cfg);
     else if (install_dry) rc = install_run(&ros, &cfg, 1);
     else if (install) rc = install_run(&ros, &cfg, 0);
