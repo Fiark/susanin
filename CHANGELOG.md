@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.11.4-rc1 — release candidate
+
+Release candidate preparation after the v0.11.3 public pilot baseline.
+
+Highlights:
+
+- persistent runtime configuration in `/data/susanin.conf`;
+- configurable RouterOS log levels;
+- diagnostic recorder with bounded rotation;
+- RouterOS resource and script-job telemetry;
+- RouterOS log diagnostics through `diag errors`;
+- safer RouterOS script termination using `:exit`;
+- transient RouterOS address-list object race protection;
+- release workflow version consistency validation.
+
+### Validation performed
+
+- ARM64 MikroTik reference platform;
+- RouterOS 7.23.3;
+- existing route-based WireGuard/AmneziaWG egress preserved;
+- clean uninstall of v0.11.3 from restored configuration;
+- Susanin-owned objects removed without affecting external VPN routing;
+- diagnostics, telemetry and staged update workflow tested.
+
+### Known limitations
+
+- ARM64 remains the public target;
+- RouterOS 7.23.3 is the reference validation platform;
+- IPv4 only;
+- `no such item (4)` from dynamic `/ip firewall connection` access remains under investigation;
+- final GitHub-built RC artifact installation is still pending.
+
 ## v0.11.3 — pilot public baseline
 
 First public pilot candidate proven on a real ARM64 MikroTik / RouterOS 7.23.3.
