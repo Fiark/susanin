@@ -265,7 +265,7 @@ int setup_run(ros_client_t *ros, app_config_t *cfg) {
         return -1;
     }
 
-    /* v0.11.3 bootstrap self-cleans its elevated worker after controller
+    /* The credentialless bootstrap self-cleans its elevated worker after controller
        start. Keep best-effort legacy helper cleanup here for upgrade safety;
        the restricted agent may not have permission to remove admin-owned
        elevated helpers, so correctness does not depend on these calls. */

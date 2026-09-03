@@ -13,12 +13,11 @@
 #include "promote.h"
 #include "setup.h"
 #include "install.h"
+#include "version.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-
-#define SUSANIN_VERSION "0.11.4-dev"
 
 static void usage(const char *argv0) {
     fprintf(stderr,

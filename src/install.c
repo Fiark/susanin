@@ -3,6 +3,7 @@
 #include "fingerprint.h"
 #include "renderer.h"
 #include "validate.h"
+#include "version.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,7 +162,7 @@ static int add_script(ros_client_t *ros, const susanin_rendered_script_t *s) {
     size_t n1 = strlen(s->name) + 7;
     size_t n2 = strlen(s->source) + 9;
     char comment[192];
-    snprintf(comment, sizeof(comment), "SUSANIN:v0.11.3 managed source fp=%s", s->fp);
+    snprintf(comment, sizeof(comment), "SUSANIN:v" SUSANIN_VERSION " managed source fp=%s", s->fp);
     size_t n3 = strlen(comment) + 10;
     char *wname = malloc(n1), *wsource = malloc(n2), *wcomment = malloc(n3);
     if (!wname || !wsource || !wcomment) {
@@ -353,7 +354,7 @@ int install_run(ros_client_t *ros, const app_config_t *cfg, int dry_run) {
         return -1;
     }
     if (dry_run) {
-        printf("=== SUSANIN FRESH INSTALL DRY-RUN v0.11.3 ===\n");
+        printf("=== SUSANIN FRESH INSTALL DRY-RUN v%s ===\n", SUSANIN_VERSION);
         printf("RouterOS changes: NONE\n");
         printf("Managed legacy-compatible objects present: %u/16\n", present);
         printf("Susanin fresh-install support objects present: %u/4\n", support);
@@ -381,7 +382,7 @@ int install_run(ros_client_t *ros, const app_config_t *cfg, int dry_run) {
         return 0;
     }
 
-    printf("=== SUSANIN FRESH INSTALL v0.11.3 ===\n");
+    printf("=== SUSANIN FRESH INSTALL v%s ===\n", SUSANIN_VERSION);
     if (present == 16) {
         printf("Existing complete installation detected. Data-plane changes: NONE.\n");
         return 0;

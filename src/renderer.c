@@ -1,5 +1,6 @@
 #include "renderer.h"
 #include "fingerprint.h"
+#include "version.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -276,7 +277,7 @@ void renderer_free(susanin_render_bundle_t *bundle) {
 int renderer_run(ros_client_t *ros, const app_config_t *cfg) {
     susanin_render_bundle_t b;
     if (renderer_build(ros, cfg, &b) < 0) return -1;
-    printf("=== SUSANIN RENDER v0.11.3 ===\n");
+    printf("=== SUSANIN RENDER v%s ===\n", SUSANIN_VERSION);
     printf("Mode: generated desired RouterOS data-plane; no changes\n");
     printf("LAN interface-list: %s\n", cfg->lan_list);
     printf("LAN IPv4 networks discovered: %u\n", b.lan_networks);

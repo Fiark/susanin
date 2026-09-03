@@ -2,6 +2,7 @@
 #include "promote.h"
 #include "fingerprint.h"
 #include "renderer.h"
+#include "version.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -275,7 +276,7 @@ static int create_backups(ros_client_t *ros, script_obj_t prod[MANAGED_COUNT]) {
         if (remove_script_name(ros, backup_names[i]) < 0) return -1;
         char comment[192];
         snprintf(comment, sizeof(comment),
-                 "SUSANIN:v0.11.3 rollback backup of %s fp=%s; DO NOT RUN",
+                 "SUSANIN:v" SUSANIN_VERSION " rollback backup of %s fp=%s; DO NOT RUN",
                  prod_names[i], prod[i].fp);
         if (add_inert_script(ros, backup_names[i], prod[i].source, comment) < 0) return -1;
         if (verify_source(ros, backup_names[i], prod[i].fp, prod[i].bytes) < 0) return -1;
@@ -297,7 +298,7 @@ static int restore_sources(ros_client_t *ros, script_obj_t prod[MANAGED_COUNT]) 
 int promote_dry_run(ros_client_t *ros, const app_config_t *cfg) {
     susanin_render_bundle_t desired;
     if (renderer_build(ros, cfg, &desired) < 0) return -1;
-    printf("=== SUSANIN PROMOTE DRY-RUN v0.11.3 ===\n");
+    printf("=== SUSANIN PROMOTE DRY-RUN v%s ===\n", SUSANIN_VERSION);
     printf("RouterOS changes: NONE\n\n");
     int rc = verify_stage(ros, &desired);
     if (rc == 0) {
@@ -314,7 +315,7 @@ int promote_run(ros_client_t *ros, const app_config_t *cfg) {
     susanin_render_bundle_t desired;
     if (renderer_build(ros, cfg, &desired) < 0) return -1;
 
-    printf("=== SUSANIN PROMOTE v0.11.3 ===\n");
+    printf("=== SUSANIN PROMOTE v%s ===\n", SUSANIN_VERSION);
     printf("Transactional source promotion with automatic rollback on failure.\n\n");
 
     if (verify_stage(ros, &desired) < 0) {
@@ -399,7 +400,7 @@ fail_pre:
 }
 
 int rollback_run(ros_client_t *ros) {
-    printf("=== SUSANIN ROLLBACK v0.11.3 ===\n");
+    printf("=== SUSANIN ROLLBACK v%s ===\n", SUSANIN_VERSION);
     script_obj_t prod[MANAGED_COUNT];
     script_obj_t backup[MANAGED_COUNT];
     scheduler_obj_t sched[MANAGED_COUNT];

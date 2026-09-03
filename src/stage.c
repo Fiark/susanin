@@ -2,6 +2,7 @@
 #include "stage.h"
 #include "fingerprint.h"
 #include "renderer.h"
+#include "version.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -142,7 +143,7 @@ static int add_stage(ros_client_t *ros, const char *name, const char *source,
 int stage_clean_run(ros_client_t *ros) {
     unsigned removed = 0;
     unsigned failed = 0;
-    printf("=== SUSANIN STAGE CLEAN v0.11.3 ===\n");
+    printf("=== SUSANIN STAGE CLEAN v%s ===\n", SUSANIN_VERSION);
     for (size_t i = 0; i < STAGE_COUNT; ++i) {
         stage_obj_t o;
         if (lookup_name_exact(ros, stage_names[i], &o) < 0) {
@@ -170,7 +171,7 @@ int stage_run(ros_client_t *ros, const app_config_t *cfg) {
     susanin_render_bundle_t desired;
     if (renderer_build(ros, cfg, &desired) < 0) return -1;
 
-    printf("=== SUSANIN STAGE v0.11.3 ===\n");
+    printf("=== SUSANIN STAGE v%s ===\n", SUSANIN_VERSION);
     printf("Mode: persistent inert stage scripts; production data-plane is untouched\n");
     printf("LAN IPv4 networks: %u\n", desired.lan_networks);
     printf("Egress: %s address=%s\n", cfg->egress_interface, desired.egress_address);
@@ -193,7 +194,7 @@ int stage_run(ros_client_t *ros, const app_config_t *cfg) {
         const susanin_rendered_script_t *s = &desired.scripts[i];
         char comment[192];
         snprintf(comment, sizeof(comment),
-                 "SUSANIN:v0.11.3 staged source for %s fp=%s; DO NOT RUN",
+                 "SUSANIN:v" SUSANIN_VERSION " staged source for %s fp=%s; DO NOT RUN",
                  s->name, s->fp);
 
         if (add_stage(ros, stage_names[i], s->source, comment) < 0) {

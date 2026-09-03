@@ -2,6 +2,7 @@
 #include "validate.h"
 #include "fingerprint.h"
 #include "renderer.h"
+#include "version.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -138,7 +139,7 @@ int validate_run(ros_client_t *ros, const app_config_t *cfg) {
     susanin_render_bundle_t desired;
     if (renderer_build(ros, cfg, &desired) < 0) return -1;
 
-    printf("=== SUSANIN VALIDATE v0.11.3 ===\n");
+    printf("=== SUSANIN VALIDATE v%s ===\n", SUSANIN_VERSION);
     printf("Mode: unique temporary RouterOS script objects; production data-plane is untouched\n");
     printf("LAN IPv4 networks: %u\n", desired.lan_networks);
     printf("Egress: %s address=%s\n", cfg->egress_interface, desired.egress_address);
