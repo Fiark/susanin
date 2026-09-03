@@ -1,4 +1,4 @@
-# Susanin v0.11.3 credentialless bootstrap
+# Susanin v0.11.4-rc1 credentialless bootstrap
 # Requires the architecture-matching container image uploaded as susanin.tar.
 # No username/password input and no environment list are required.
 # Controller network: 172.31.254.0/30 (RouterOS .1, Susanin .2).
@@ -81,14 +81,14 @@
         # versioned root-dir, otherwise the worker would mistake it for an old
         # container and continuously delete/re-add it.
         :local susaninBootstrapRoot [:tostr [/container get [find where name="susanin-controller"] root-dir]]
-        :if ($susaninBootstrapRoot = "/susanin-controller-v0113") do={
+        :if ($susaninBootstrapRoot = "/susanin-controller-v0114rc1") do={
             :local susaninBootstrapArch [:tostr [/container get [find where name="susanin-controller"] arch]]
-            :if ($susaninBootstrapArch = "") do={ :return }
+            :if ($susaninBootstrapArch = "") do={ :exit }
             :local susaninBootstrapTag [:tostr [/container get [find where name="susanin-controller"] tag]]
-            :if ($susaninBootstrapTag != "0.11.3") do={
+            :if ($susaninBootstrapTag != "0.11.4-rc1") do={
                 /system scheduler disable [find where name="susanin-bootstrap-worker"]
-                :log error ("SUSANIN: extracted image tag mismatch, expected 0.11.3 got " . $susaninBootstrapTag)
-                :return
+                :log error ("SUSANIN: extracted image tag mismatch, expected 0.11.4-rc1 got " . $susaninBootstrapTag)
+                :exit
             }
 
             :local susaninStartOK true
@@ -98,7 +98,7 @@
                 :set susaninStartOK false
                 :log warning ("SUSANIN: bootstrap start returned error; will retry: " . $susaninStartError)
             }
-            :if ($susaninStartOK = false) do={ :return }
+            :if ($susaninStartOK = false) do={ :exit }
 
             # The bootstrap worker carries temporary elevated policies. Do not
             # leave it behind for the restricted susanin-agent to clean up later:
@@ -107,7 +107,7 @@
             /system scheduler add name="susanin-bootstrap-cleanup" interval=2s policy=read,write,policy,test,password comment="SUSANIN: one-shot bootstrap helper cleanup" on-event=":delay 1s; /system scheduler remove [find where name=\"susanin-bootstrap-worker\"]; /system script remove [find where name=\"susanin-bootstrap-worker\"]; /system scheduler remove [find where name=\"susanin-bootstrap-cleanup\"]"
             /system scheduler disable [find where name="susanin-bootstrap-worker"]
             :log info "SUSANIN: controller bootstrap finished; helper cleanup queued"
-            :return
+            :exit
         }
 
         # A different root-dir belongs to an older Susanin controller. It is
@@ -117,7 +117,7 @@
         :delay 1s
         :onerror susaninRemoveError in={ /container remove [find where name="susanin-controller"] } do={}
         :delay 1s
-        :if ([:len [/container find where name="susanin-controller"]] > 0) do={ :return }
+        :if ([:len [/container find where name="susanin-controller"]] > 0) do={ :exit }
     }
 
     # Detach old consumers before rotating the machine credential.
@@ -140,7 +140,7 @@
     :local susaninWrittenPassword [/file get [find where name="susanin-secrets/routeros_password"] contents as-string]
     :if (($susaninWrittenSize != 48) || ([:len $susaninWrittenPassword] != 48) || ($susaninWrittenPassword != $susaninGeneratedPassword)) do={
         :log error "SUSANIN: secret verification failed; agent password was NOT changed"
-        :return
+        :exit
     }
 
     # Synchronize the restricted RouterOS machine identity only after successful
@@ -155,10 +155,10 @@
     /container mounts add list=susanin-data src=susanin-data dst=/data
 
     :onerror susaninContainerAddError in={
-        /container add file=susanin.tar interface=veth-susanin root-dir=/susanin-controller-v0113 mountlists=susanin-secret,susanin-data name=susanin-controller logging=yes start-on-boot=yes cmd=daemon
+        /container add file=susanin.tar interface=veth-susanin root-dir=/susanin-controller-v0114rc1 mountlists=susanin-secret,susanin-data name=susanin-controller logging=yes start-on-boot=yes cmd=daemon
     } do={
         :log error ("SUSANIN: container add failed: " . $susaninContainerAddError)
-        :return
+        :exit
     }
     :log info "SUSANIN: container queued for extraction"
 }
