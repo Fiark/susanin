@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag/release to build (example: v0.11.3)'
+        description: 'Existing tag/release to build (example: v0.11.4-rc1)'
         required: true
 
 permissions:
@@ -25,26 +25,124 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag || github.ref }}
 
+      - name: Validate release version plumbing
+        shell: bash
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "ERROR: invalid release tag: $TAG"
+            exit 1
+          fi
+
+          VERSION="${TAG#v}"
+
+          SOURCE_VERSION="$(
+            sed -nE 's/^#define SUSANIN_VERSION "([^"]+)"$/\1/p' src/version.h
+          )"
+
+          BOOTSTRAP_HEADER_VERSION="$(
+            sed -nE 's/^# Susanin v([^ ]+) credentialless bootstrap$/\1/p' bootstrap/install.rsc
+          )"
+
+          BOOTSTRAP_TAG_VERSION="$(
+            sed -nE 's/.*\$susaninBootstrapTag != "([^"]+)".*/\1/p' bootstrap/install.rsc
+          )"
+
+          ROOT_TOKEN="$(
+            printf '%s' "$VERSION" | tr -cd '[:alnum:]'
+          )"
+          EXPECTED_ROOT="/susanin-controller-v${ROOT_TOKEN}"
+
+          BOOTSTRAP_ROOTS="$(
+            grep -oE '/susanin-controller-v[[:alnum:]]+' bootstrap/install.rsc \
+              | sort -u || true
+          )"
+
+          ROOT_COUNT="$(
+            printf '%s\n' "$BOOTSTRAP_ROOTS" \
+              | sed '/^$/d' \
+              | wc -l \
+              | tr -d ' '
+          )"
+
+          echo "Release tag              : $TAG"
+          echo "Release version          : $VERSION"
+          echo "Source version           : $SOURCE_VERSION"
+          echo "Bootstrap header version : $BOOTSTRAP_HEADER_VERSION"
+          echo "Bootstrap expected tag   : $BOOTSTRAP_TAG_VERSION"
+          echo "Expected root-dir        : $EXPECTED_ROOT"
+          echo "Bootstrap root-dir(s)    :"
+          printf '%s\n' "$BOOTSTRAP_ROOTS"
+
+          if [[ "$SOURCE_VERSION" != "$VERSION" ]]; then
+            echo "ERROR: src/version.h does not match release tag"
+            exit 1
+          fi
+
+          if [[ "$BOOTSTRAP_HEADER_VERSION" != "$VERSION" ]]; then
+            echo "ERROR: bootstrap header does not match release tag"
+            exit 1
+          fi
+
+          if [[ "$BOOTSTRAP_TAG_VERSION" != "$VERSION" ]]; then
+            echo "ERROR: bootstrap expected image tag does not match release tag"
+            exit 1
+          fi
+
+          if [[ "$ROOT_COUNT" != "1" ]]; then
+            echo "ERROR: bootstrap must contain exactly one unique versioned root-dir"
+            exit 1
+          fi
+
+          if [[ "$BOOTSTRAP_ROOTS" != "$EXPECTED_ROOT" ]]; then
+            echo "ERROR: bootstrap root-dir does not match release version"
+            exit 1
+          fi
+
+          if grep -nE ':return([;}[:space:]]|$)' bootstrap/install.rsc; then
+            echo "ERROR: bare :return found in bootstrap/install.rsc"
+            exit 1
+          fi
+
+          echo "PASS: release version plumbing is consistent"
+
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
 
       - name: Build RouterOS ARM64 image
         shell: bash
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euxo pipefail
-          TAG='${{ github.event.inputs.tag || github.ref_name }}'
+
           VERSION="${TAG#v}"
+
           mkdir -p dist
+
           docker buildx build \
             --platform linux/arm64 \
             --no-cache \
             -t "susanin:${VERSION}" \
             --output type=docker,dest=dist/susanin.tar \
             .
+
           cp bootstrap/install.rsc dist/install.rsc
           cp bootstrap/uninstall.rsc dist/uninstall.rsc
           cp bootstrap/uninstall-controller.rsc dist/uninstall-controller.rsc
-          (cd dist && sha256sum susanin.tar install.rsc uninstall.rsc uninstall-controller.rsc > SHA256SUMS)
+
+          (
+            cd dist
+            sha256sum \
+              susanin.tar \
+              install.rsc \
+              uninstall.rsc \
+              uninstall-controller.rsc \
+              > SHA256SUMS
+          )
 
       - name: Create/attach prerelease
         env:
@@ -52,5 +150,9 @@ jobs:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" --title "$TAG — pilot" --generate-notes --prerelease
+            || gh release create "$TAG" \
+                 --title "$TAG — pilot" \
+                 --generate-notes \
+                 --prerelease
+
           gh release upload "$TAG" dist/* --clobber
