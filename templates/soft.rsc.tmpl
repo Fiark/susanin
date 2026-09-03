@@ -22,8 +22,10 @@
             /ip firewall address-list add list=auto_awg_watch_tcp address=$dst timeout=8s comment=("TCP-LATE-STALL " . [:tostr $port])
           }
         } else={
-          :local left [/ip firewall address-list get $wid timeout]
-          :if ($left <= 4s) do={ :set trigger true; :set reason "TCP-LATE-STALL" }
+          :onerror err in={
+            :local left [/ip firewall address-list get $wid timeout]
+            :if ($left <= 4s) do={ :set trigger true; :set reason "TCP-LATE-STALL" }
+          } do={}
         }
       }
       :if ($trigger = true) do={
@@ -67,15 +69,17 @@
           /ip firewall address-list add list=auto_awg_watch_udp address=$dst timeout=8s comment="QUIC-LATE-STALL 443"
         }
       } else={
-        :local left [/ip firewall address-list get $wid timeout]
-        :if ($left <= 4s) do={
-          :if (([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_udp" and address=$dst]] = 0)) do={
-            /ip firewall address-list remove $wid
-            /ip firewall address-list add list=auto_awg_test_udp address=$dst timeout=1m comment="QUIC-LATE-STALL 443"
-            :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT QUIC-LATE-STALL " . [:tostr $dst] . ":443") }
-            :onerror err in={ /ip firewall connection remove $id } do={}
+        :onerror err in={
+          :local left [/ip firewall address-list get $wid timeout]
+          :if ($left <= 4s) do={
+            :if (([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_udp" and address=$dst]] = 0)) do={
+              /ip firewall address-list remove [find where list="auto_awg_watch_udp" and address=$dst]
+              /ip firewall address-list add list=auto_awg_test_udp address=$dst timeout=1m comment="QUIC-LATE-STALL 443"
+              :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT QUIC-LATE-STALL " . [:tostr $dst] . ":443") }
+              :onerror err in={ /ip firewall connection remove $id } do={}
+            }
           }
-        }
+        } do={}
       }
     }
   }
