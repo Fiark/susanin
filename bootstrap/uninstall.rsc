@@ -1,4 +1,4 @@
-# Susanin v0.11.3 full uninstall.
+# Susanin v0.11.4-rc1 full uninstall.
 # Removes Susanin controller + Susanin-managed adaptive routing data-plane.
 # Does NOT remove the selected VPN/tunnel itself.
 

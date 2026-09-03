@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: Susanin version
-      placeholder: 0.11.3
+      placeholder: 0.11.4-rc1
     validations:
       required: true
   - type: input

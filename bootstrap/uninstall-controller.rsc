@@ -1,4 +1,4 @@
-# Susanin v0.11.3 controller-only cleanup.
+# Susanin v0.11.4-rc1 controller-only cleanup.
 # Keeps the RouterOS adaptive routing data-plane intact.
 
 /system scheduler remove [find where name~"susanin-bootstrap-"]

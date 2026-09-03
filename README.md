@@ -715,7 +715,7 @@ docker buildx build \
   --builder way-builder \
   --platform linux/arm64 \
   --no-cache \
-  -t susanin:0.11.3 \
+  -t susanin:local \
   --output type=docker,dest=susanin.tar \
   .
 ```
@@ -724,8 +724,8 @@ docker buildx build \
 
 ```bash
 docker load -i susanin.tar
-docker image inspect susanin:0.11.3 --format '{{.Os}}/{{.Architecture}}'
-docker run --rm --platform linux/arm64 susanin:0.11.3 version
+docker image inspect susanin:local --format '{{.Os}}/{{.Architecture}}'
+docker run --rm --platform linux/arm64 susanin:local version
 ```
 
 Нативная C-сборка:
