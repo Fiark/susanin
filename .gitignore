@@ -12,3 +12,5 @@ src/*.o
 secrets/
 susanin-secrets/
 .DS_Store
+
+dist-dev/

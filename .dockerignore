@@ -12,3 +12,5 @@ src/*.o
 .gitignore
 susanin-secrets
 secrets
+
+dist-dev/
