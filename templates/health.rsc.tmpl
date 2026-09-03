@@ -1,8 +1,8 @@
-:if ([/system script job print count-only as-value where script=[:jobname]] > 1) do={ :return }
+:if ([/system script job print count-only as-value where script=[:jobname]] > 1) do={ :exit }
 :local healthRule [/ip firewall mangle find where comment="AUTO-AWG: L1 mark test"]
-:if ([:len $healthRule] = 0) do={ :return }
+:if ([:len $healthRule] = 0) do={ :exit }
 :local awgAddrId [/ip address find where interface="{{EGRESS_INTERFACE}}"]
-:if ([:len $awgAddrId] = 0) do={ :return }
+:if ([:len $awgAddrId] = 0) do={ :exit }
 :local awgCIDR [/ip address get $awgAddrId address]
 :local awgIP [:toip [:pick $awgCIDR 0 [:find $awgCIDR "/"]]]
 :local p1 [/ping address=1.1.1.1 interface="{{EGRESS_INTERFACE}}" src-address=$awgIP count=1]
@@ -37,13 +37,13 @@
     }
     :if ({{LOG_INFO}}) do={ :log info ("AUTO-AWG: tunnel UP, recovery TCP=" . [:tostr $recoveredTCP] . " UDP=" . [:tostr $recoveredUDP]) }
   }
-  :return
+  :exit
 }
-:if ($isDisabled = true) do={ :return }
+:if ($isDisabled = true) do={ :exit }
 :local failId [/ip firewall address-list find where list="auto_awg_health_fail" and address=$awgIP]
 :if ([:len $failId] = 0) do={
   /ip firewall address-list add list=auto_awg_health_fail address=$awgIP timeout=8s comment="AWG health miss 1/2"
-  :return
+  :exit
 }
 /ip firewall address-list remove [find where list="auto_awg_health_fail"]
 /ip firewall mangle disable [find where comment~"^AUTO-AWG:"]

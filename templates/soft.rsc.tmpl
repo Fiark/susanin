@@ -1,7 +1,7 @@
-:if ([/system script job print count-only as-value where script=[:jobname]] > 1) do={ :return }
+:if ([/system script job print count-only as-value where script=[:jobname]] > 1) do={ :exit }
 :local healthRule [/ip firewall mangle find where comment="AUTO-AWG: L1 mark test"]
-:if ([:len $healthRule] = 0) do={ :return }
-:if ([/ip firewall mangle get $healthRule disabled] = true) do={ :return }
+:if ([:len $healthRule] = 0) do={ :exit }
+:if ([/ip firewall mangle get $healthRule disabled] = true) do={ :exit }
 :foreach c in=[/ip firewall connection print as-value where protocol=tcp and tcp-state=established] do={
   :local id ($c->".id"); :local src [:toip ($c->"src-address")]; :local dst [:toip ($c->"dst-address")]; :local port ($c->"dst-port")
   :local mark [:tostr ($c->"connection-mark")]; :local op ($c->"orig-packets"); :local rp ($c->"repl-packets"); :local ob ($c->"orig-bytes"); :local rb ($c->"repl-bytes")
