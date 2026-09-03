@@ -69,18 +69,39 @@ Therefore this error is not currently attributed exclusively to Susanin schedule
 
 The issue remains open. The current direction is to reduce or restructure full connection-tracking scans rather than claim the condition is solved.
 
-## Not yet verified for v0.11.4-rc1
+## v0.11.4-rc1 field validation
 
-The final GitHub-built `v0.11.4-rc1` artifacts have not yet been installed on the clean reference router.
+The exact GitHub-generated `v0.11.4-rc1` release assets were tested on the ARM64 RouterOS 7.23.3 reference router.
 
-Still required:
+Verified:
 
-- fresh install from the clean baseline;
-- first-run setup;
-- reboot;
-- tunnel DOWN fail-open;
-- tunnel UP recovery;
-- diagnostics and `diag errors`;
-- full uninstall;
-- reinstall;
-- extended soak with all four RouterOS workers enabled.
+- credentialless bootstrap from the published `susanin.tar` and `install.rsc`;
+- controller image version `0.11.4-rc1`;
+- controller root-dir `/susanin-controller-v0114rc1`;
+- automatic detection of `wg-awg-proxy`;
+- automatic detection of routing table `r_to_awg`;
+- generated RouterOS validation `PASS=4 FAIL=0`;
+- fresh install result `scripts=4 schedulers=4 mangle=8 safety=3`;
+- existing tunnel masquerade preserved;
+- adaptive TCP and UDP learning;
+- tunnel DOWN detection and fail-open DIRECT behavior;
+- tunnel UP recovery with adaptive mangle rules restored automatically;
+- RouterOS reboot with controller and all four schedulers restored;
+- full uninstall of Susanin-owned objects;
+- external AmneziaWG container and `r_to_awg` route preserved after uninstall;
+- successful reinstall using the same GitHub release assets;
+- stable CPU and memory usage during soak testing;
+- no persistent or stuck Susanin script jobs observed.
+
+The previous bare `:return` / `missing value(s)` RouterOS script failure was not observed after changing script termination to `:exit`.
+
+### Remaining known issue
+
+`no such item (4)` remains reproducible during normal `v0.11.4-rc1` operation.
+
+After the final reinstall, RouterOS diagnostics showed this as the only script-error class observed during the test window.
+
+The data plane continued operating, learning destinations and recovering from tunnel outages despite the intermittent errors.
+
+Investigation remains tracked in GitHub Issue #1.
+
