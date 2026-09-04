@@ -2,47 +2,71 @@
 :local healthRule [/ip firewall mangle find where comment="AUTO-AWG: L1 mark test"]
 :if ([:len $healthRule] = 0) do={ :exit }
 :if ([/ip firewall mangle get $healthRule disabled] = true) do={ :exit }
-:foreach c in=[/ip firewall connection print as-value where protocol=tcp and tcp-state=syn-sent] do={
-  :local id ($c->".id"); :local src [:toip ($c->"src-address")]; :local dst [:toip ($c->"dst-address")]; :local port ($c->"dst-port")
-  :local mark [:tostr ($c->"connection-mark")]; :local op ($c->"orig-packets"); :local rp ($c->"repl-packets")
-  {{LAN_MATCH}}
-  :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true) && ($op >= 2) && ($rp = 0)) do={
-    :if (!(($dst in 0.0.0.0/8) || ($dst in 10.0.0.0/8) || ($dst in 100.64.0.0/10) || ($dst in 127.0.0.0/8) || ($dst in 169.254.0.0/16) || ($dst in 172.16.0.0/12) || ($dst in 192.168.0.0/16) || ($dst in 224.0.0.0/4) || ($dst in 240.0.0.0/4))) do={
-      :if (([:len [/ip firewall address-list find where list="auto_awg_ok_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_tcp" and address=$dst]] = 0)) do={
-        /ip firewall address-list remove [find where list="auto_awg_watch_tcp" and address=$dst]
-        /ip firewall address-list add list=auto_awg_test_tcp address=$dst timeout=1m comment=("FAST TCP-SYN " . [:tostr $port])
-        :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: FAST TCP-SYN " . [:tostr $dst] . ":" . [:tostr $port]) }
-        :onerror err in={ /ip firewall connection remove $id } do={}
-      }
+
+:local conns [/ip firewall connection print as-value]
+
+:foreach c in=$conns do={
+  :local proto [:tostr ($c->"protocol")]
+
+  :if (($proto = "tcp") || ($proto = "udp")) do={
+    :local state [:tostr ($c->"tcp-state")]
+    :local port ($c->"dst-port")
+    :local op ($c->"orig-packets")
+    :local rp ($c->"repl-packets")
+    :local rb ($c->"repl-bytes")
+    :local kind ""
+
+    :if (($proto = "tcp") && ($state = "syn-sent") && ($op >= 2) && ($rp = 0)) do={
+      :set kind "TCP-SYN"
     }
-  }
-}
-:foreach c in=[/ip firewall connection print as-value where protocol=tcp and tcp-state=close] do={
-  :local id ($c->".id"); :local src [:toip ($c->"src-address")]; :local dst [:toip ($c->"dst-address")]; :local port ($c->"dst-port")
-  :local mark [:tostr ($c->"connection-mark")]; :local op ($c->"orig-packets"); :local rp ($c->"repl-packets"); :local rb ($c->"repl-bytes")
-  {{LAN_MATCH}}
-  :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true) && ($op >= 1) && ($rp <= 2) && ($rb < 256)) do={
-    :if (!(($dst in 0.0.0.0/8) || ($dst in 10.0.0.0/8) || ($dst in 100.64.0.0/10) || ($dst in 127.0.0.0/8) || ($dst in 169.254.0.0/16) || ($dst in 172.16.0.0/12) || ($dst in 192.168.0.0/16) || ($dst in 224.0.0.0/4) || ($dst in 240.0.0.0/4))) do={
-      :if (([:len [/ip firewall address-list find where list="auto_awg_ok_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_tcp" and address=$dst]] = 0)) do={
-        /ip firewall address-list remove [find where list="auto_awg_watch_tcp" and address=$dst]
-        /ip firewall address-list add list=auto_awg_test_tcp address=$dst timeout=1m comment=("FAST TCP-CLOSE " . [:tostr $port])
-        :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: FAST TCP-CLOSE " . [:tostr $dst] . ":" . [:tostr $port]) }
-        :onerror err in={ /ip firewall connection remove $id } do={}
-      }
+
+    :if (($proto = "tcp") && ($state = "close") && ($op >= 1) && ($rp <= 2) && ($rb < 256)) do={
+      :set kind "TCP-CLOSE"
     }
-  }
-}
-:foreach c in=[/ip firewall connection print as-value where protocol=udp and dst-port=443 and seen-reply=no] do={
-  :local id ($c->".id"); :local src [:toip ($c->"src-address")]; :local dst [:toip ($c->"dst-address")]
-  :local mark [:tostr ($c->"connection-mark")]; :local op ($c->"orig-packets"); :local rp ($c->"repl-packets")
-  {{LAN_MATCH}}
-  :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true) && ($op >= 3) && ($rp = 0)) do={
-    :if (!(($dst in 0.0.0.0/8) || ($dst in 10.0.0.0/8) || ($dst in 100.64.0.0/10) || ($dst in 127.0.0.0/8) || ($dst in 169.254.0.0/16) || ($dst in 172.16.0.0/12) || ($dst in 192.168.0.0/16) || ($dst in 224.0.0.0/4) || ($dst in 240.0.0.0/4))) do={
-      :if (([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_udp" and address=$dst]] = 0)) do={
-        /ip firewall address-list remove [find where list="auto_awg_watch_udp" and address=$dst]
-        /ip firewall address-list add list=auto_awg_test_udp address=$dst timeout=1m comment="FAST QUIC 443"
-        :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: FAST QUIC " . [:tostr $dst] . ":443") }
-        :onerror err in={ /ip firewall connection remove $id } do={}
+
+    :if (($proto = "udp") && ($port = 443) && ($op >= 3) && ($rp = 0)) do={
+      :set kind "UDP-QUIC"
+    }
+
+    :if ($kind != "") do={
+      :local id ($c->".id")
+      :local src [:toip ($c->"src-address")]
+      :local dst [:toip ($c->"dst-address")]
+      :local mark [:tostr ($c->"connection-mark")]
+
+      {{LAN_MATCH}}
+
+      :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true)) do={
+        :if (!(($dst in 0.0.0.0/8) || ($dst in 10.0.0.0/8) || ($dst in 100.64.0.0/10) || ($dst in 127.0.0.0/8) || ($dst in 169.254.0.0/16) || ($dst in 172.16.0.0/12) || ($dst in 192.168.0.0/16) || ($dst in 224.0.0.0/4) || ($dst in 240.0.0.0/4))) do={
+
+          :if (($kind = "TCP-SYN") || ($kind = "TCP-CLOSE")) do={
+            :if (([:len [/ip firewall address-list find where list="auto_awg_ok_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_tcp" and address=$dst]] = 0)) do={
+              /ip firewall address-list remove [find where list="auto_awg_watch_tcp" and address=$dst]
+
+              :if ($kind = "TCP-SYN") do={
+                /ip firewall address-list add list=auto_awg_test_tcp address=$dst timeout=1m comment=("FAST TCP-SYN " . [:tostr $port])
+                :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: FAST TCP-SYN " . [:tostr $dst] . ":" . [:tostr $port]) }
+              }
+
+              :if ($kind = "TCP-CLOSE") do={
+                /ip firewall address-list add list=auto_awg_test_tcp address=$dst timeout=1m comment=("FAST TCP-CLOSE " . [:tostr $port])
+                :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: FAST TCP-CLOSE " . [:tostr $dst] . ":" . [:tostr $port]) }
+              }
+
+              :onerror err in={ /ip firewall connection remove $id } do={}
+            }
+          }
+
+          :if ($kind = "UDP-QUIC") do={
+            :if (([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_udp" and address=$dst]] = 0)) do={
+              /ip firewall address-list remove [find where list="auto_awg_watch_udp" and address=$dst]
+              /ip firewall address-list add list=auto_awg_test_udp address=$dst timeout=1m comment="FAST QUIC 443"
+              :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: FAST QUIC " . [:tostr $dst] . ":443") }
+              :onerror err in={ /ip firewall connection remove $id } do={}
+            }
+          }
+
+        }
       }
     }
   }
