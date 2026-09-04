@@ -3,7 +3,7 @@
 :if ([:len $healthRule] = 0) do={ :exit }
 :if ([/ip firewall mangle get $healthRule disabled] = true) do={ :exit }
 
-:local conns [/ip firewall connection print as-value]
+:local conns [/ip firewall connection print as-value where ((protocol=tcp and (tcp-state=syn-sent or tcp-state=close)) or (protocol=udp and dst-port=443 and seen-reply=no))]
 
 :foreach c in=$conns do={
   :local proto [:tostr ($c->"protocol")]
