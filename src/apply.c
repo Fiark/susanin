@@ -5,8 +5,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MAX_CURRENT_MANGLE 32
-
 typedef struct {
     const char *name;
     const char *interval;
@@ -48,9 +46,6 @@ typedef struct {
     char script_fp[4][17];
     int scheduler_present[4];
     int scheduler_ok[4];
-
-    current_mangle_t mangle[MAX_CURRENT_MANGLE];
-    size_t mangle_count;
 } apply_ctx_t;
 
 static const char *script_names[4] = {
@@ -163,15 +158,31 @@ static void copy_attr(char *dst, size_t cap, const char *v) {
     snprintf(dst, cap, "%s", v ? v : "");
 }
 
-static int mangle_cb(const ros_sentence_t *s, void *opaque) {
-    apply_ctx_t *ctx = opaque;
-    if (!ros_is_reply(s, "!re")) return 0;
-    const char *comment = ros_get_attr(s, "comment");
-    if (!comment || strncmp(comment, "AUTO-AWG:", 9) != 0) return 0;
-    if (ctx->mangle_count >= MAX_CURRENT_MANGLE) return 0;
+typedef struct {
+    const char *comment;
+    current_mangle_t *out;
+    unsigned matches;
+} mangle_lookup_ctx_t;
 
-    current_mangle_t *m = &ctx->mangle[ctx->mangle_count++];
+static int mangle_lookup_cb(const ros_sentence_t *s, void *opaque) {
+    mangle_lookup_ctx_t *ctx = opaque;
+    if (!ros_is_reply(s, "!re")) return 0;
+
+    const char *comment = ros_get_attr(s, "comment");
+    if (!comment || strcmp(comment, ctx->comment) != 0) return 0;
+
+    ctx->matches++;
+
+    /*
+     * Preserve the first exact match for structural comparison.
+     * Additional matches are counted so duplicate fixed managed
+     * objects are reported as reconciliation drift.
+     */
+    if (ctx->matches != 1) return 0;
+
+    current_mangle_t *m = ctx->out;
     memset(m, 0, sizeof(*m));
+
     copy_attr(m->comment, sizeof(m->comment), comment);
     copy_attr(m->action, sizeof(m->action), ros_get_attr(s, "action"));
     copy_attr(m->protocol, sizeof(m->protocol), ros_get_attr(s, "protocol"));
@@ -182,14 +193,51 @@ static int mangle_cb(const ros_sentence_t *s, void *opaque) {
     copy_attr(m->dst_port, sizeof(m->dst_port), ros_get_attr(s, "dst-port"));
     copy_attr(m->in_list, sizeof(m->in_list), ros_get_attr(s, "in-interface-list"));
     copy_attr(m->disabled, sizeof(m->disabled), ros_get_attr(s, "disabled"));
+
     return 0;
 }
 
-static const current_mangle_t *find_mangle(const apply_ctx_t *ctx, const char *comment) {
-    for (size_t i = 0; i < ctx->mangle_count; ++i) {
-        if (strcmp(ctx->mangle[i].comment, comment) == 0) return &ctx->mangle[i];
-    }
-    return NULL;
+static int lookup_mangle_exact(
+    ros_client_t *ros,
+    const char *comment,
+    current_mangle_t *out,
+    unsigned *matches
+) {
+    if (!ros || !comment || !out || !matches) return -1;
+
+    memset(out, 0, sizeof(*out));
+    *matches = 0;
+
+    char query[256];
+    snprintf(
+        query,
+        sizeof(query),
+        "?comment=%s",
+        comment
+    );
+
+    mangle_lookup_ctx_t ctx = {
+        .comment = comment,
+        .out = out,
+        .matches = 0
+    };
+
+    const char *cmd[] = {
+        "/ip/firewall/mangle/print",
+        "=.proplist=comment,action,protocol,dst-address-list,connection-mark,new-connection-mark,new-routing-mark,dst-port,in-interface-list,disabled",
+        query
+    };
+
+    int rc = ros_command(
+        ros,
+        cmd,
+        3,
+        mangle_lookup_cb,
+        &ctx
+    );
+
+    *matches = ctx.matches;
+    return rc;
 }
 
 static int mangle_matches(const current_mangle_t *m, const expected_mangle_t *e,
@@ -233,12 +281,6 @@ static int collect(ros_client_t *ros, apply_ctx_t *ctx) {
 
     const char *sched[] = {"/system/scheduler/print", "=.proplist=name,interval,on-event,disabled"};
     if (ros_command(ros, sched, 2, scheduler_cb, ctx) < 0) return -1;
-
-    const char *mangle[] = {
-        "/ip/firewall/mangle/print",
-        "=.proplist=comment,action,protocol,dst-address-list,connection-mark,new-connection-mark,new-routing-mark,dst-port,in-interface-list,disabled"
-    };
-    if (ros_command(ros, mangle, 2, mangle_cb, ctx) < 0) return -1;
 
     return 0;
 }
@@ -360,11 +402,39 @@ int apply_dry_run(ros_client_t *ros, const app_config_t *cfg) {
         if (e.action && strcmp(e.action, "mark-routing") == 0) {
             e.new_route_mark = cfg->routing_table;
         }
-        const current_mangle_t *m = find_mangle(&ctx, e.comment);
-        if (!m) {
+
+        current_mangle_t current;
+        unsigned matches = 0;
+
+        if (
+            lookup_mangle_exact(
+                ros,
+                e.comment,
+                &current,
+                &matches
+            ) < 0
+        ) {
+            fprintf(
+                stderr,
+                "Susanin apply --dry-run: failed to inspect fixed mangle rule '%s'.\n",
+                e.comment
+            );
+
+            if (desired_ok) renderer_free(&desired);
+            return -1;
+        }
+
+        if (matches == 0) {
             printf("  CREATE %s\n", e.comment);
             create++;
-        } else if (!mangle_matches(m, &e, cfg)) {
+        } else if (matches > 1) {
+            printf(
+                "  UPDATE %s duplicate-objects=%u\n",
+                e.comment,
+                matches
+            );
+            update++;
+        } else if (!mangle_matches(&current, &e, cfg)) {
             printf("  UPDATE %s\n", e.comment);
             update++;
         } else {
@@ -372,6 +442,11 @@ int apply_dry_run(ros_client_t *ros, const app_config_t *cfg) {
             keep++;
         }
     }
+
+    printf(
+        "  note: dynamic dev2 per-port AUTO-AWG: P rules are excluded "
+        "from fixed-rule reconciliation.\n"
+    );
 
     if (desired_ok) renderer_free(&desired);
 
