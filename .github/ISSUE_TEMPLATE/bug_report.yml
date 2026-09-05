@@ -1,6 +1,5 @@
-
-name: "Bug report / Сообщить об ошибке"
-description: "Report a reproducible Susanin problem after diagnostic capture"
+name: "Runtime bug / Ошибка во время работы"
+description: "Susanin is running, but runtime behavior is incorrect"
 title: "[bug] "
 labels:
   - bug
@@ -9,9 +8,11 @@ body:
   - type: markdown
     attributes:
       value: |
-        ## Before opening a Bug Issue / Перед созданием Bug Issue
+        ## Runtime bug
 
-        Сначала включите internal Susanin diagnostics:
+        Use this form when `susanin-controller` is RUNNING and Susanin commands are available.
+
+        Before filing the issue:
 
         1. `susanin diag start`
         2. reproduce the problem
@@ -21,11 +22,11 @@ body:
         6. `susanin apply --dry-run`
         7. `susanin diag stop`
 
-        Full guide: `docs/LOGGING.md`
+        [Logging and diagnostic capture guide](https://github.com/Fiark/susanin/blob/main/docs/LOGGING.md)
 
-        NEVER attach RouterOS backups, `show-sensitive` exports,
-        VPN private keys, passwords or
-        `susanin-secrets/routeros_password`.
+        If the container/bootstrap never starts, use the **Install / bootstrap problem** form instead.
+
+        Never attach RouterOS backups, `show-sensitive` exports, VPN private keys, passwords or `susanin-secrets/routeros_password`.
 
   - type: checkboxes
     id: diagnostics
@@ -34,14 +35,13 @@ body:
       options:
         - label: I enabled Susanin diagnostics before reproducing the problem and ran `diag sample` and `diag errors` afterwards.
           required: true
-        - label: I reviewed and sanitized all attached logs and removed secrets/private keys/passwords.
+        - label: I reviewed/sanitized all attached logs and removed secrets, private keys and passwords.
           required: true
 
   - type: input
     id: version
     attributes:
       label: Susanin version
-      description: Output of `susanin version`
       placeholder: "0.11.5"
     validations:
       required: true
@@ -58,7 +58,7 @@ body:
     id: arch
     attributes:
       label: Architecture / device family
-      description: Do not include device serial number.
+      description: Do not include serial number.
       placeholder: "ARM64 / hAP ax3"
     validations:
       required: true
@@ -67,12 +67,7 @@ body:
     id: topology
     attributes:
       label: Network / tunnel topology
-      description: Describe LAN list, LAN networks, tunnel type and routing table. Do not include credentials.
-      placeholder: |
-        LAN list: LAN
-        LAN network(s): ...
-        Tunnel: WireGuard/AmneziaWG
-        Routing table: ...
+      description: LAN list, tunnel type, routing table. Do not include credentials.
     validations:
       required: true
 
@@ -134,6 +129,6 @@ body:
     id: logs
     attributes:
       label: Sanitized AUTO-AWG / diagnostic logs
-      description: Paste relevant sanitized lines or attach sanitized susanin-debug.ndjson.
+      description: Paste relevant lines or attach sanitized NDJSON.
     validations:
       required: true

@@ -390,6 +390,40 @@ susanin install
 
 ---
 
+
+# Обновление установленной системы
+
+Замена Susanin container и обновление RouterOS data plane — это разные операции.
+
+После обновления container обязательно выполните:
+
+~~~text
+susanin version
+susanin validate
+susanin apply --dry-run
+~~~
+
+Если `apply --dry-run` показывает `UPDATE`, выполните:
+
+~~~text
+susanin stage
+susanin promote --dry-run
+susanin promote
+susanin snapshot
+susanin apply --dry-run
+~~~
+
+`promote` выполняет source replacement транзакционно:
+создаёт rollback backup, останавливает managed schedulers,
+ждёт завершения jobs, заменяет source, проверяет fingerprints
+и восстанавливает scheduler states.
+
+Подробная пошаговая процедура:
+
+[UPGRADE.md](UPGRADE.md)
+
+---
+
 # Safe source upgrade
 
 ## stage

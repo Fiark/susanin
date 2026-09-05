@@ -1,0 +1,95 @@
+name: "Install / bootstrap problem"
+description: "Susanin container does not install, extract, start, or become usable"
+title: "[install] "
+labels:
+  - bug
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Install / bootstrap problem
+
+        Use this form when `susanin-controller` is not usable, so normal `diag` commands cannot be collected.
+
+        Never publish RouterOS backups, `show-sensitive` exports, VPN keys, passwords or `susanin-secrets/routeros_password`.
+
+  - type: input
+    id: release
+    attributes:
+      label: Susanin release
+      placeholder: "v0.11.5"
+    validations:
+      required: true
+
+  - type: input
+    id: routeros
+    attributes:
+      label: RouterOS version
+      placeholder: "7.23.3"
+    validations:
+      required: true
+
+  - type: input
+    id: arch
+    attributes:
+      label: Architecture / device family
+      description: Do not include serial number.
+      placeholder: "ARM64 / hAP ax3"
+    validations:
+      required: true
+
+  - type: textarea
+    id: parser
+    attributes:
+      label: install.rsc parser dry-run
+      description: Output of `/import file-name=install.rsc verbose=yes dry-run`
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: container
+    attributes:
+      label: Container state
+      description: Output of `/container print detail where name~"susanin"`
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Susanin bootstrap log
+      description: Output of `/log print where message~"SUSANIN:"`
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: helpers
+    attributes:
+      label: Bootstrap helper state
+      description: |
+        Include:
+        `/system/scheduler/print detail where name~"susanin-bootstrap"`
+        `/system/script/print detail where name~"susanin-bootstrap"`
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: files
+    attributes:
+      label: Relevant RouterOS Files
+      description: File names and sizes only. Do not paste secret contents.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: What happened?
+    validations:
+      required: true

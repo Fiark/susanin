@@ -1,10 +1,10 @@
 # Security policy
 
-Susanin is a **pilot** project that changes RouterOS firewall/routing objects. Treat every installation as a network change and keep a tested rollback path.
+Susanin v0.11.5 is the first **stable** release for the validated ARM64 / RouterOS 7.23.3 reference profile. Susanin changes RouterOS firewall/routing objects, so every installation or upgrade must still be treated as a network change with a tested backup and rollback path.
 
 ## Supported security scope
 
-The current public pilot targets ARM64 RouterOS and has been tested on RouterOS 7.23.3. Security assumptions may differ on other RouterOS releases.
+The current public stable target is ARM64 RouterOS. The reference validation platform is RouterOS 7.23.3. Security assumptions may differ on other RouterOS releases or architectures.
 
 ## Credential model
 
@@ -32,7 +32,7 @@ The password is not passed via container environment variables or command-line a
 
 ## RouterOS API
 
-The current pilot uses plain RouterOS API on TCP/8728 **inside the isolated /30 control network**. The bootstrap adds `172.31.254.2/32` to the API allowed-address set and inserts a narrow input firewall allow rule.
+The current stable release uses plain RouterOS API on TCP/8728 **inside the isolated /30 control network**. The bootstrap adds `172.31.254.2/32` to the API allowed-address set and inserts a narrow input firewall allow rule.
 
 This is not equivalent to transport encryption. API-SSL is a future hardening target.
 

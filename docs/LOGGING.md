@@ -396,6 +396,37 @@ Script errors:
 
 ---
 
+
+# Как выгрузить diagnostic files
+
+На RouterOS persistent diagnostic files находятся в mounted directory:
+
+~~~text
+susanin-data/diagnostics/
+~~~
+
+Проверить:
+
+~~~routeros
+/file print where name~"susanin-data/diagnostics"
+~~~
+
+Обычно нужны:
+
+~~~text
+susanin-data/diagnostics/susanin-debug.ndjson
+susanin-data/diagnostics/susanin-debug.ndjson.1
+susanin-data/diagnostics/susanin-debug.ndjson.2
+~~~
+
+Скачать их можно через WinBox → Files, SCP или другой обычный способ доступа к RouterOS Files.
+
+Не выгружайте целиком `susanin-data` и тем более `susanin-secrets`.
+
+Перед публикацией просмотрите NDJSON и RouterOS logs и при необходимости anonymize IP/interface/topology metadata.
+
+---
+
 # Что приложить к Issue
 
 Минимально:

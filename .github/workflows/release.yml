@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag/release to build (example: v0.11.4-rc1)'
+        description: 'Existing tag to build (example: v0.12.0-rc1)'
         required: true
 
 permissions:
@@ -19,8 +19,9 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag || github.ref }}
@@ -54,6 +55,7 @@ jobs:
           ROOT_TOKEN="$(
             printf '%s' "$VERSION" | tr -cd '[:alnum:]'
           )"
+
           EXPECTED_ROOT="/susanin-controller-v${ROOT_TOKEN}"
 
           BOOTSTRAP_ROOTS="$(
@@ -77,30 +79,11 @@ jobs:
           echo "Bootstrap root-dir(s)    :"
           printf '%s\n' "$BOOTSTRAP_ROOTS"
 
-          if [[ "$SOURCE_VERSION" != "$VERSION" ]]; then
-            echo "ERROR: src/version.h does not match release tag"
-            exit 1
-          fi
-
-          if [[ "$BOOTSTRAP_HEADER_VERSION" != "$VERSION" ]]; then
-            echo "ERROR: bootstrap header does not match release tag"
-            exit 1
-          fi
-
-          if [[ "$BOOTSTRAP_TAG_VERSION" != "$VERSION" ]]; then
-            echo "ERROR: bootstrap expected image tag does not match release tag"
-            exit 1
-          fi
-
-          if [[ "$ROOT_COUNT" != "1" ]]; then
-            echo "ERROR: bootstrap must contain exactly one unique versioned root-dir"
-            exit 1
-          fi
-
-          if [[ "$BOOTSTRAP_ROOTS" != "$EXPECTED_ROOT" ]]; then
-            echo "ERROR: bootstrap root-dir does not match release version"
-            exit 1
-          fi
+          test "$SOURCE_VERSION" = "$VERSION"
+          test "$BOOTSTRAP_HEADER_VERSION" = "$VERSION"
+          test "$BOOTSTRAP_TAG_VERSION" = "$VERSION"
+          test "$ROOT_COUNT" = "1"
+          test "$BOOTSTRAP_ROOTS" = "$EXPECTED_ROOT"
 
           if grep -nE ':return([;}[:space:]]|$)' bootstrap/install.rsc; then
             echo "ERROR: bare :return found in bootstrap/install.rsc"
@@ -109,8 +92,11 @@ jobs:
 
           echo "PASS: release version plumbing is consistent"
 
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build RouterOS ARM64 image
         shell: bash
@@ -121,6 +107,7 @@ jobs:
 
           VERSION="${TAG#v}"
 
+          rm -rf dist
           mkdir -p dist
 
           docker buildx build \
@@ -144,11 +131,56 @@ jobs:
               > SHA256SUMS
           )
 
-      - name: Create/attach release
+      - name: Validate exact ARM64 release image
+        shell: bash
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${TAG#v}"
+
+          docker load -i dist/susanin.tar
+
+          PLATFORM="$(
+            docker image inspect "susanin:${VERSION}" \
+              --format '{{.Os}}/{{.Architecture}}'
+          )"
+
+          echo "Image platform: $PLATFORM"
+
+          if [[ "$PLATFORM" != "linux/arm64" ]]; then
+            echo "ERROR: release image is not linux/arm64"
+            exit 1
+          fi
+
+          VERSION_OUTPUT="$(
+            docker run \
+              --rm \
+              --platform linux/arm64 \
+              "susanin:${VERSION}" \
+              version
+          )"
+
+          echo "Binary output: $VERSION_OUTPUT"
+
+          if [[ "$VERSION_OUTPUT" != "Susanin ${VERSION}" ]]; then
+            echo "ERROR: binary version mismatch"
+            exit 1
+          fi
+
+          (
+            cd dist
+            sha256sum -c SHA256SUMS
+          )
+
+          echo "PASS: exact release image validated"
+
+      - name: Create draft, attach assets, then publish
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        shell: bash
         run: |
           set -euo pipefail
 
@@ -167,31 +199,59 @@ jobs:
           echo "Release title: $TITLE"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release already exists: $TAG"
+            IS_DRAFT="$(
+              gh release view "$TAG" \
+                --json isDraft \
+                --jq '.isDraft'
+            )"
+
+            if [[ "$IS_DRAFT" != "true" ]]; then
+              echo "ERROR: published release already exists."
+              echo "Refusing to replace or clobber published release assets."
+              exit 1
+            fi
+
+            echo "Existing DRAFT release found; safe to resume asset upload."
           else
             if [[ -f "$NOTES_FILE" ]]; then
               if [[ "$RELEASE_KIND" == "prerelease" ]]; then
                 gh release create "$TAG" \
                   --title "$TITLE" \
                   --notes-file "$NOTES_FILE" \
+                  --draft \
                   --prerelease
               else
                 gh release create "$TAG" \
                   --title "$TITLE" \
-                  --notes-file "$NOTES_FILE"
+                  --notes-file "$NOTES_FILE" \
+                  --draft
               fi
             else
               if [[ "$RELEASE_KIND" == "prerelease" ]]; then
                 gh release create "$TAG" \
                   --title "$TITLE" \
                   --generate-notes \
+                  --draft \
                   --prerelease
               else
                 gh release create "$TAG" \
                   --title "$TITLE" \
-                  --generate-notes
+                  --generate-notes \
+                  --draft
               fi
             fi
           fi
 
+          # --clobber is allowed only while the release is still a draft.
           gh release upload "$TAG" dist/* --clobber
+
+          if [[ "$RELEASE_KIND" == "stable" ]]; then
+            gh release edit "$TAG" \
+              --draft=false \
+              --latest
+          else
+            gh release edit "$TAG" \
+              --draft=false
+          fi
+
+          echo "PASS: release published after all assets were attached"

@@ -27,9 +27,9 @@
 > - **[susanin.tar](https://github.com/Fiark/susanin/releases/download/v0.11.5/susanin.tar)**
 > - **[install.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.5/install.rsc)**
 >
-> User guide: **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)**
+> User guide: **[docs/USER_GUIDE_en.md](docs/USER_GUIDE_en.md)**
 >
-> Diagnostics: **[docs/LOGGING.md](docs/LOGGING.md)**
+> Diagnostics: **[docs/LOGGING_en.md](docs/LOGGING_en.md)**
 >
 > Before filing a Bug Issue, enable Susanin diagnostics,
 > reproduce the problem and run `diag sample` and `diag errors`.
@@ -116,6 +116,32 @@ KEEP=16 CREATE=0 UPDATE=0 BLOCKERS=0
 Result: IN SYNC structurally.
 ```
 
+## Upgrading
+
+Replacing the Susanin container does not automatically prove that existing RouterOS data-plane source was upgraded.
+
+After a controller upgrade run:
+
+~~~text
+susanin version
+susanin validate
+susanin apply --dry-run
+~~~
+
+If updates are required, use:
+
+~~~text
+susanin stage
+susanin promote --dry-run
+susanin promote
+susanin snapshot
+susanin apply --dry-run
+~~~
+
+Full procedure:
+
+[docs/UPGRADE_en.md](docs/UPGRADE_en.md)
+
 ## Diagnostics before opening a Bug Issue
 
 Collect a diagnostic capture first:
@@ -130,7 +156,7 @@ susanin apply --dry-run
 susanin diag stop
 ~~~
 
-See [docs/LOGGING.md](docs/LOGGING.md).
+See [docs/LOGGING_en.md](docs/LOGGING_en.md).
 
 Never upload RouterOS backups, `show-sensitive` exports,
 private keys, passwords or `susanin-secrets/routeros_password`.

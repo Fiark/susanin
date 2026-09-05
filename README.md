@@ -573,19 +573,56 @@ Logging / Bug Issue diagnostics:
 
 ## Обновление
 
-Стабильная схема обновления controller:
+Controller и RouterOS data plane обновляются отдельно.
 
-1. Сделайте backup RouterOS.
-2. Скачайте новый `susanin.tar` и `install.rsc`.
-3. Загрузите их в Files.
-4. Выполните `dry-run` импорта.
-5. Выполните `/import file-name=install.rsc verbose=yes`.
-6. Дождитесь `R` у `susanin-controller`.
-7. Выполните `status` и `apply --dry-run`.
+**Импорт нового `install.rsc` обновляет controller, но сам по себе не гарантирует замену source уже существующих `auto-awg-*` scripts.**
 
-Data plane остаётся в RouterOS и продолжает работать, пока controller заменяется.
+Официальная процедура:
 
-Для контролируемой замены source уже существующих managed scripts есть `stage → promote → rollback`. Это более низкоуровневый механизм и пока предназначен прежде всего для тестирования/обновлений проекта.
+~~~routeros
+/import file-name=install.rsc verbose=yes dry-run
+/import file-name=install.rsc verbose=yes
+~~~
+
+После запуска нового controller:
+
+~~~routeros
+/container/shell susanin-controller cmd="/usr/local/bin/susanin version" no-sh timeout=30
+/container/shell susanin-controller cmd="/usr/local/bin/susanin validate" no-sh timeout=120
+/container/shell susanin-controller cmd="/usr/local/bin/susanin apply --dry-run" no-sh timeout=60
+~~~
+
+Если `UPDATE=0`, data plane уже соответствует новой версии.
+
+Если `apply --dry-run` показывает `UPDATE`, используйте:
+
+~~~routeros
+/container/shell susanin-controller cmd="/usr/local/bin/susanin stage" no-sh timeout=300
+/container/shell susanin-controller cmd="/usr/local/bin/susanin promote --dry-run" no-sh timeout=120
+~~~
+
+Продолжайте только при:
+
+~~~text
+Safety gates: PASS
+~~~
+
+Затем:
+
+~~~routeros
+/container/shell susanin-controller cmd="/usr/local/bin/susanin promote" no-sh timeout=300
+/container/shell susanin-controller cmd="/usr/local/bin/susanin snapshot" no-sh timeout=60
+/container/shell susanin-controller cmd="/usr/local/bin/susanin apply --dry-run" no-sh timeout=60
+~~~
+
+Нормальный финал:
+
+~~~text
+KEEP=16 CREATE=0 UPDATE=0 BLOCKERS=0
+Result: IN SYNC structurally.
+~~~
+
+Подробно: **[docs/UPGRADE.md](docs/UPGRADE.md)**
 
 ## Удаление
 

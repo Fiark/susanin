@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: "Logging / diagnostics guide"
+    url: "https://github.com/Fiark/susanin/blob/main/docs/LOGGING.md"
+    about: "Collect runtime diagnostics before filing a bug."
+
+  - name: "Upgrade guide"
+    url: "https://github.com/Fiark/susanin/blob/main/docs/UPGRADE.md"
+    about: "Use the transactional data-plane upgrade procedure."
+
+  - name: "English user guide"
+    url: "https://github.com/Fiark/susanin/blob/main/docs/USER_GUIDE_en.md"
+    about: "English documentation."
