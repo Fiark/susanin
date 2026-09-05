@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 typedef struct {
     char **items;
@@ -24,6 +25,26 @@ typedef struct {
     value_match_fn match;
     id_vec_t *ids;
 } collect_ctx_t;
+
+static void sleep_ms(
+    long ms
+) {
+    struct timespec ts;
+
+    ts.tv_sec =
+        ms / 1000;
+
+    ts.tv_nsec =
+        (ms % 1000) * 1000000L;
+
+    while (
+        nanosleep(
+            &ts,
+            &ts
+        ) < 0
+    ) {
+    }
+}
 
 static void id_vec_free(
     id_vec_t *v
@@ -67,16 +88,6 @@ static int id_vec_add(
 
     v->count++;
     return 0;
-}
-
-static int match_exact(
-    const char *value,
-    const char *pattern
-) {
-    return
-        value &&
-        pattern &&
-        strcmp(value, pattern) == 0;
 }
 
 static int match_prefix(
@@ -323,8 +334,14 @@ static int cleanup_matching(
     const char *attr,
     value_match_fn match,
     const char *pattern,
+    const char *label,
     unsigned *removed
 ) {
+    const char *what =
+        label && *label
+            ? label
+            : "adaptive-state";
+
     id_vec_t before;
 
     if (
@@ -339,10 +356,41 @@ static int cleanup_matching(
             &before
         ) < 0
     ) {
+        fprintf(
+            stderr,
+            "Susanin state cleanup: inspect failed for %s.\n",
+            what
+        );
+
         return -1;
     }
 
-    size_t initial = before.count;
+    size_t initial =
+        before.count;
+
+    printf(
+        "  CLEAN %-28s initial=%zu\n",
+        what,
+        initial
+    );
+
+    /*
+     * These cleanup calls run with the managed schedulers paused.
+     * If the requested state is already absent, the post-condition
+     * is already satisfied and no RouterOS mutation is necessary.
+     */
+    if (initial == 0) {
+        id_vec_free(
+            &before
+        );
+
+        printf(
+            "  CLEAN %-28s PASS remaining=0\n",
+            what
+        );
+
+        return 0;
+    }
 
     remove_ids_best_effort(
         ros,
@@ -350,132 +398,115 @@ static int cleanup_matching(
         &before
     );
 
-    id_vec_free(&before);
+    id_vec_free(
+        &before
+    );
 
-    id_vec_t after;
-
-    if (
-        collect_ids(
-            ros,
-            print_cmd,
-            proplist,
-            query,
-            attr,
-            match,
-            pattern,
-            &after
-        ) < 0
+    /*
+     * RouterOS 7.23.x does not guarantee that a just-removed dynamic
+     * object disappears from a subsequent API print immediately.
+     *
+     * Stage/promote already use delayed read-back for the same reason.
+     * Re-read and retry the remaining exact objects instead of treating
+     * the first stale read-back as a migration failure.
+     */
+    for (
+        unsigned attempt = 1;
+        attempt <= 20;
+        ++attempt
     ) {
-        return -1;
+        sleep_ms(
+            100
+        );
+
+        id_vec_t after;
+
+        if (
+            collect_ids(
+                ros,
+                print_cmd,
+                proplist,
+                query,
+                attr,
+                match,
+                pattern,
+                &after
+            ) < 0
+        ) {
+            fprintf(
+                stderr,
+                "Susanin state cleanup: verify failed for %s attempt=%u.\n",
+                what,
+                attempt
+            );
+
+            return -1;
+        }
+
+        if (after.count == 0) {
+            id_vec_free(
+                &after
+            );
+
+            add_stat(
+                removed,
+                initial
+            );
+
+            printf(
+                "  CLEAN %-28s PASS remaining=0 attempts=%u\n",
+                what,
+                attempt
+            );
+
+            return 0;
+        }
+
+        size_t remaining =
+            after.count;
+
+        if (attempt == 20) {
+            id_vec_free(
+                &after
+            );
+
+            fprintf(
+                stderr,
+                "Susanin state cleanup: post-condition failed for %s remaining=%zu.\n",
+                what,
+                remaining
+            );
+
+            return -1;
+        }
+
+        /*
+         * An object may have survived the first remove, or the original
+         * id may have expired/reappeared under another RouterOS id.
+         * Remove the exact currently visible set and verify again.
+         */
+        remove_ids_best_effort(
+            ros,
+            remove_cmd,
+            &after
+        );
+
+        id_vec_free(
+            &after
+        );
     }
 
-    int ok =
-        after.count == 0;
-
-    id_vec_free(&after);
-
-    if (!ok) return -1;
-
-    add_stat(
-        removed,
-        initial
-    );
-
-    return 0;
+    return -1;
 }
 
-static int cleanup_exact_list(
-    ros_client_t *ros,
-    const char *list,
-    unsigned *removed
+static int match_legacy_list(
+    const char *value,
+    const char *pattern
 ) {
-    char query[192];
+    (void)pattern;
 
-    snprintf(
-        query,
-        sizeof(query),
-        "?list=%s",
-        list
-    );
+    if (!value) return 0;
 
-    return cleanup_matching(
-        ros,
-        "/ip/firewall/address-list/print",
-        "/ip/firewall/address-list/remove",
-        "=.proplist=.id,list",
-        query,
-        "list",
-        match_exact,
-        list,
-        removed
-    );
-}
-
-static int cleanup_connection_mark(
-    ros_client_t *ros,
-    const char *mark,
-    unsigned *removed
-) {
-    char query[192];
-
-    snprintf(
-        query,
-        sizeof(query),
-        "?connection-mark=%s",
-        mark
-    );
-
-    return cleanup_matching(
-        ros,
-        "/ip/firewall/connection/print",
-        "/ip/firewall/connection/remove",
-        "=.proplist=.id,connection-mark",
-        query,
-        "connection-mark",
-        match_exact,
-        mark,
-        removed
-    );
-}
-
-static int cleanup_port_lists(
-    ros_client_t *ros,
-    unsigned *removed
-) {
-    return cleanup_matching(
-        ros,
-        "/ip/firewall/address-list/print",
-        "/ip/firewall/address-list/remove",
-        "=.proplist=.id,list",
-        NULL,
-        "list",
-        match_dev2_port_list,
-        NULL,
-        removed
-    );
-}
-
-static int cleanup_lazy_rules(
-    ros_client_t *ros,
-    unsigned *removed
-) {
-    return cleanup_matching(
-        ros,
-        "/ip/firewall/mangle/print",
-        "/ip/firewall/mangle/remove",
-        "=.proplist=.id,comment",
-        NULL,
-        "comment",
-        match_prefix,
-        "AUTO-AWG: P ",
-        removed
-    );
-}
-
-static int cleanup_legacy_into(
-    ros_client_t *ros,
-    susanin_cleanup_stats_t *stats
-) {
     static const char *legacy_lists[] = {
         "auto_awg_watch_tcp",
         "auto_awg_test_tcp",
@@ -493,35 +524,143 @@ static int cleanup_legacy_into(
         ++i
     ) {
         if (
-            cleanup_exact_list(
-                ros,
-                legacy_lists[i],
-                &stats->legacy_entries
-            ) < 0
+            strcmp(
+                value,
+                legacy_lists[i]
+            ) == 0
         ) {
-            return -1;
+            return 1;
         }
     }
 
-    static const char *marks[] = {
-        "auto-awg-test-conn",
-        "auto-awg-ok-conn"
-    };
+    return 0;
+}
 
-    for (
-        size_t i = 0;
-        i < sizeof(marks) / sizeof(marks[0]);
-        ++i
+static int match_adaptive_connection_mark(
+    const char *value,
+    const char *pattern
+) {
+    (void)pattern;
+
+    return
+        value &&
+        (
+            strcmp(
+                value,
+                "auto-awg-test-conn"
+            ) == 0 ||
+            strcmp(
+                value,
+                "auto-awg-ok-conn"
+            ) == 0
+        );
+}
+
+static int cleanup_legacy_lists(
+    ros_client_t *ros,
+    unsigned *removed
+) {
+    /*
+     * One narrow two-property scan is safer and cheaper than eight
+     * independent filtered scans. Matching stays deterministic in the
+     * Susanin client instead of depending on RouterOS query filtering.
+     */
+    return cleanup_matching(
+        ros,
+        "/ip/firewall/address-list/print",
+        "/ip/firewall/address-list/remove",
+        "=.proplist=.id,list",
+        NULL,
+        "list",
+        match_legacy_list,
+        NULL,
+        "legacy-ip-only-lists",
+        removed
+    );
+}
+
+static int cleanup_marked_connections(
+    ros_client_t *ros,
+    unsigned *removed
+) {
+    /*
+     * connection-mark belongs to the live connection-tracking table.
+     * RouterOS 7.23.3 may change this table while it is being read.
+     *
+     * Do not use ?connection-mark=... here. Read only .id and
+     * connection-mark, then select Susanin marks client-side.
+     * This path runs only during promotion/rollback, never continuously.
+     */
+    return cleanup_matching(
+        ros,
+        "/ip/firewall/connection/print",
+        "/ip/firewall/connection/remove",
+        "=.proplist=.id,connection-mark",
+        NULL,
+        "connection-mark",
+        match_adaptive_connection_mark,
+        NULL,
+        "adaptive-connection-marks",
+        removed
+    );
+}
+
+static int cleanup_port_lists(
+    ros_client_t *ros,
+    unsigned *removed
+) {
+    return cleanup_matching(
+        ros,
+        "/ip/firewall/address-list/print",
+        "/ip/firewall/address-list/remove",
+        "=.proplist=.id,list",
+        NULL,
+        "list",
+        match_dev2_port_list,
+        NULL,
+        "dev2-port-lists",
+        removed
+    );
+}
+
+static int cleanup_lazy_rules(
+    ros_client_t *ros,
+    unsigned *removed
+) {
+    return cleanup_matching(
+        ros,
+        "/ip/firewall/mangle/print",
+        "/ip/firewall/mangle/remove",
+        "=.proplist=.id,comment",
+        NULL,
+        "comment",
+        match_prefix,
+        "AUTO-AWG: P ",
+        "dev2-lazy-rules",
+        removed
+    );
+}
+
+static int cleanup_legacy_into(
+    ros_client_t *ros,
+    susanin_cleanup_stats_t *stats
+) {
+    if (
+        cleanup_legacy_lists(
+            ros,
+            &stats->legacy_entries
+        ) < 0
     ) {
-        if (
-            cleanup_connection_mark(
-                ros,
-                marks[i],
-                &stats->marked_connections
-            ) < 0
-        ) {
-            return -1;
-        }
+        return -1;
+    }
+
+    if (
+        cleanup_marked_connections(
+            ros,
+            &stats->marked_connections
+        ) < 0
+    ) {
+        return -1;
     }
 
     return 0;
