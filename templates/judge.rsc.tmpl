@@ -3,9 +3,17 @@
 :if ([:len $healthRule] = 0) do={ :exit }
 :if ([/ip firewall mangle get $healthRule disabled] = true) do={ :exit }
 
-:local conns [/ip firewall connection print as-value where (connection-mark=auto-awg-test-conn or connection-mark=auto-awg-ok-conn)]
+:local susaninSnapshotOK true
+:local conns
+:onerror susaninSnapshotError in={
+  :set conns [/ip firewall connection print as-value where (connection-mark=auto-awg-test-conn or connection-mark=auto-awg-ok-conn)]
+} do={
+  :set susaninSnapshotOK false
+}
+:if ($susaninSnapshotOK = false) do={ :exit }
 
 :foreach c in=$conns do={
+  :onerror susaninFlowError in={
   :local id ($c->".id")
   :local src [:toip ($c->"src-address")]
   :local dst [:toip ($c->"dst-address")]
@@ -81,14 +89,14 @@
           }
         }
 
-        /ip firewall address-list remove [find where list=$testList and address=$dst]
-        /ip firewall address-list remove [find where list=$watchList and address=$dst]
-        /ip firewall address-list remove [find where list=$coolList and address=$dst]
+        :onerror err in={ /ip firewall address-list remove [find where list=$testList and address=$dst] } do={}
+        :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
+        :onerror err in={ /ip firewall address-list remove [find where list=$coolList and address=$dst] } do={}
       }
 
       :if (($good = false) && ($failed = true)) do={
-        /ip firewall address-list remove [find where list=$testList and address=$dst]
-        /ip firewall address-list remove [find where list=$watchList and address=$dst]
+        :onerror err in={ /ip firewall address-list remove [find where list=$testList and address=$dst] } do={}
+        :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
 
         :if ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0) do={
           /ip firewall address-list add list=$coolList address=$dst timeout=5m comment=("DIRECT+AWG failed " . $proto . ":" . [:tostr $port])
@@ -134,9 +142,9 @@
         }
 
         :if ($failed = true) do={
-          /ip firewall address-list remove [find where list=$okList and address=$dst]
-          /ip firewall address-list remove [find where list=$testList and address=$dst]
-          /ip firewall address-list remove [find where list=$watchList and address=$dst]
+          :onerror err in={ /ip firewall address-list remove [find where list=$okList and address=$dst] } do={}
+          :onerror err in={ /ip firewall address-list remove [find where list=$testList and address=$dst] } do={}
+          :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
 
           :if ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0) do={
             /ip firewall address-list add list=$coolList address=$dst timeout=30s comment=("Confirmed AWG " . $proto . " route failed")
@@ -161,4 +169,5 @@
       }
     }
   }
+  } do={}
 }

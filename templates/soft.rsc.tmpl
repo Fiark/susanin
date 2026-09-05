@@ -3,9 +3,17 @@
 :if ([:len $healthRule] = 0) do={ :exit }
 :if ([/ip firewall mangle get $healthRule disabled] = true) do={ :exit }
 
-:local conns [/ip firewall connection print as-value where ((protocol=tcp and tcp-state=established) or (protocol=udp and (seen-reply=no or (dst-port=443 and seen-reply=yes))))]
+:local susaninSnapshotOK true
+:local conns
+:onerror susaninSnapshotError in={
+  :set conns [/ip firewall connection print as-value where ((protocol=tcp and tcp-state=established) or (protocol=udp and (seen-reply=no or (dst-port=443 and seen-reply=yes))))]
+} do={
+  :set susaninSnapshotOK false
+}
+:if ($susaninSnapshotOK = false) do={ :exit }
 
 :foreach c in=$conns do={
+  :onerror susaninFlowError in={
   :local proto [:tostr ($c->"protocol")]
   :local id ($c->".id")
   :local src [:toip ($c->"src-address")]
@@ -64,7 +72,7 @@
 
         :if ($trigger = true) do={
           :if (([:len [/ip firewall address-list find where list="auto_awg_ok_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_tcp" and address=$dst]] = 0)) do={
-            /ip firewall address-list remove [find where list="auto_awg_watch_tcp" and address=$dst]
+            :onerror err in={ /ip firewall address-list remove [find where list="auto_awg_watch_tcp" and address=$dst] } do={}
             /ip firewall address-list add list=auto_awg_test_tcp address=$dst timeout=1m comment=($reason . " " . [:tostr $port])
             :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT " . $reason . " " . [:tostr $dst] . ":" . [:tostr $port]) }
             :onerror err in={ /ip firewall connection remove $id } do={}
@@ -88,7 +96,7 @@
       :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true)) do={
         :if (!(($dst in 0.0.0.0/8) || ($dst in 10.0.0.0/8) || ($dst in 100.64.0.0/10) || ($dst in 127.0.0.0/8) || ($dst in 169.254.0.0/16) || ($dst in 172.16.0.0/12) || ($dst in 192.168.0.0/16) || ($dst in 224.0.0.0/4) || ($dst in 240.0.0.0/4))) do={
           :if (([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_udp" and address=$dst]] = 0)) do={
-            /ip firewall address-list remove [find where list="auto_awg_watch_udp" and address=$dst]
+            :onerror err in={ /ip firewall address-list remove [find where list="auto_awg_watch_udp" and address=$dst] } do={}
             /ip firewall address-list add list=auto_awg_test_udp address=$dst timeout=1m comment=("UDP " . [:tostr $port])
             :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT UDP " . [:tostr $dst] . ":" . [:tostr $port]) }
             :onerror err in={ /ip firewall connection remove $id } do={}
@@ -123,7 +131,7 @@
 
               :if ($left <= 4s) do={
                 :if (([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_udp" and address=$dst]] = 0)) do={
-                  /ip firewall address-list remove [find where list="auto_awg_watch_udp" and address=$dst]
+                  :onerror err in={ /ip firewall address-list remove [find where list="auto_awg_watch_udp" and address=$dst] } do={}
                   /ip firewall address-list add list=auto_awg_test_udp address=$dst timeout=1m comment="QUIC-LATE-STALL 443"
                   :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT QUIC-LATE-STALL " . [:tostr $dst] . ":443") }
                   :onerror err in={ /ip firewall connection remove $id } do={}
@@ -135,4 +143,5 @@
       }
     }
   }
+  } do={}
 }
