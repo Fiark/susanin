@@ -34,20 +34,26 @@
     :local coolList ""
 
     :if ($proto = "tcp") do={
-      :set testList "auto_awg_test_tcp"
-      :set okList "auto_awg_ok_tcp"
-      :set watchList "auto_awg_watch_tcp"
-      :set coolList "auto_awg_cooldown_tcp"
+      :set testList ("auto_awg_test_tcp_" . [:tostr $port])
+      :set okList ("auto_awg_ok_tcp_" . [:tostr $port])
+      :set watchList ("auto_awg_watch_tcp_" . [:tostr $port])
+      :set coolList ("auto_awg_cooldown_tcp_" . [:tostr $port])
     }
 
     :if ($proto = "udp") do={
-      :set testList "auto_awg_test_udp"
-      :set okList "auto_awg_ok_udp"
-      :set watchList "auto_awg_watch_udp"
-      :set coolList "auto_awg_cooldown_udp"
+      :set testList ("auto_awg_test_udp_" . [:tostr $port])
+      :set okList ("auto_awg_ok_udp_" . [:tostr $port])
+      :set watchList ("auto_awg_watch_udp_" . [:tostr $port])
+      :set coolList ("auto_awg_cooldown_udp_" . [:tostr $port])
     }
 
-    :if (($connMark = "auto-awg-test-conn") && ($testList != "") && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] > 0)) do={
+    :local directHit false
+
+    :if ([:len [/ip firewall address-list find where list="vpn_direct" and address=$dst]] > 0) do={
+      :set directHit true
+    }
+
+    :if (($directHit = false) && ($connMark = "auto-awg-test-conn") && ($testList != "") && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] > 0)) do={
       :local good false
       :local failed false
 
@@ -108,7 +114,7 @@
       }
     }
 
-    :if (($connMark = "auto-awg-ok-conn") && ($okList != "")) do={
+    :if (($directHit = false) && ($connMark = "auto-awg-ok-conn") && ($okList != "")) do={
       :local okId [/ip firewall address-list find where list=$okList and address=$dst]
 
       :if ([:len $okId] > 0) do={
