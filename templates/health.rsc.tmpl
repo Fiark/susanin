@@ -40,12 +40,14 @@
         :local id ($c->".id")
         :local src [:toip ($c->"src-address")]
         :local dst [:toip ($c->"dst-address")]
+        :local port ($c->"dst-port")
         :local mark [:tostr ($c->"connection-mark")]
+        :local okList ("auto_awg_ok_tcp_" . [:tostr $port])
 
         {{LAN_MATCH}}
 
         :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true)) do={
-          :if ([:len [/ip firewall address-list find where list="auto_awg_ok_tcp" and address=$dst]] > 0) do={
+          :if (([:len [/ip firewall address-list find where list="vpn_direct" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$okList and address=$dst]] > 0)) do={
             :onerror err in={
               /ip firewall connection remove $id
               :set recoveredTCP ($recoveredTCP + 1)
@@ -69,12 +71,14 @@
         :local id ($c->".id")
         :local src [:toip ($c->"src-address")]
         :local dst [:toip ($c->"dst-address")]
+        :local port ($c->"dst-port")
         :local mark [:tostr ($c->"connection-mark")]
+        :local okList ("auto_awg_ok_udp_" . [:tostr $port])
 
         {{LAN_MATCH}}
 
         :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true)) do={
-          :if ([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] > 0) do={
+          :if (([:len [/ip firewall address-list find where list="vpn_direct" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$okList and address=$dst]] > 0)) do={
             :onerror err in={
               /ip firewall connection remove $id
               :set recoveredUDP ($recoveredUDP + 1)
@@ -129,6 +133,22 @@
 
 :onerror err in={
   /ip firewall address-list remove [find where list="auto_awg_test_udp"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list~"^auto_awg_watch_tcp_"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list~"^auto_awg_test_tcp_"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list~"^auto_awg_watch_udp_"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list~"^auto_awg_test_udp_"]
 } do={}
 
 :if ({{LOG_ERROR}}) do={
