@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.12.0-dev1 — routing control-plane foundation
+
+- keep the published v0.11.5 adaptive data-plane behavior as the baseline;
+- add persistent routing target metadata: interface or routing-table;
+- add `target show`, `target list`, and explicit target selection commands;
+- keep a resolved interface/table compatibility pair for the proven v0.11.5
+  health and routing scripts during the first v0.12 development stage;
+- add persistent `VPN Direct` policy with IPv4/CIDR and domain entries;
+- synchronize VPN Direct IP entries into RouterOS address-list `vpn_direct`;
+- synchronize VPN Direct domains through RouterOS DNS FWD rules with
+  `match-subdomain=yes` and `address-list=vpn_direct`;
+- install a VPN Direct mangle bypass before adaptive AUTO-AWG rules;
+- add FAST/MIDDLE/SLOW accuracy profile configuration; dev1 still executes
+  the current FAST behavior until the evidence state machine is implemented;
+- force controller RouterOS API sockets to IPv4 (`AF_INET`).
+
 ## v0.11.5 — stable
 
 First stable release for the validated ARM64 / RouterOS 7.23.3 reference profile.

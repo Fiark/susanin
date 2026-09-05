@@ -21,6 +21,11 @@ jobs:
           make CFLAGS='-O2 -pipe -std=c11 -Wall -Wextra -Wpedantic -Werror'
           ./susanin version
 
+      - name: v0.12 control-plane regression guard
+        run: |
+          chmod +x tools/v012-control-plane-check.sh
+          ./tools/v012-control-plane-check.sh
+
       - name: Secret hygiene scan
         run: |
           chmod +x tools/secret-scan.sh

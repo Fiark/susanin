@@ -179,7 +179,7 @@ int ros_connect(ros_client_t *client, const char *host, uint16_t port) {
 
     struct addrinfo hints, *res = NULL, *it = NULL;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
     char portbuf[16];

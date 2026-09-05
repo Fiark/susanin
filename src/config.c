@@ -10,50 +10,127 @@
 #define SUSANIN_CONFIG_FILE "/data/susanin.conf"
 #define SUSANIN_AGENT_USER "susanin-agent"
 
-static int read_text_file(const char *path, char *buf, size_t buflen) {
+static int read_text_file(
+    const char *path,
+    char *buf,
+    size_t buflen
+) {
     if (!path || !buf || buflen < 2) return -1;
+
     FILE *f = fopen(path, "rb");
     if (!f) return -1;
+
     size_t n = fread(buf, 1, buflen - 1, f);
     int e = ferror(f);
+
     fclose(f);
+
     if (e || n == 0) return -1;
+
     buf[n] = '\0';
-    while (n && (buf[n - 1] == '\n' || buf[n - 1] == '\r' || buf[n - 1] == ' ' || buf[n - 1] == '\t')) buf[--n] = '\0';
+
+    while (
+        n &&
+        (
+            buf[n - 1] == '\n' ||
+            buf[n - 1] == '\r' ||
+            buf[n - 1] == ' ' ||
+            buf[n - 1] == '\t'
+        )
+    ) {
+        buf[--n] = '\0';
+    }
+
     return n ? 0 : -1;
 }
 
-static int infer_default_gateway(char out[256]) {
+static int infer_default_gateway(
+    char out[256]
+) {
     FILE *f = fopen("/proc/net/route", "r");
     if (!f) return -1;
+
     char line[512];
-    if (!fgets(line, sizeof(line), f)) { fclose(f); return -1; }
+
+    if (!fgets(line, sizeof(line), f)) {
+        fclose(f);
+        return -1;
+    }
+
     while (fgets(line, sizeof(line), f)) {
         char iface[64];
-        unsigned long dest = 0, gw = 0, flags = 0;
-        if (sscanf(line, "%63s %lx %lx %lx", iface, &dest, &gw, &flags) != 4) continue;
+        unsigned long dest = 0;
+        unsigned long gw = 0;
+        unsigned long flags = 0;
+
+        if (
+            sscanf(
+                line,
+                "%63s %lx %lx %lx",
+                iface,
+                &dest,
+                &gw,
+                &flags
+            ) != 4
+        ) {
+            continue;
+        }
+
         if (dest != 0 || !(flags & 0x2)) continue;
+
         struct in_addr a;
         a.s_addr = (uint32_t)gw;
-        if (!inet_ntop(AF_INET, &a, out, 256)) { fclose(f); return -1; }
+
+        if (!inet_ntop(AF_INET, &a, out, 256)) {
+            fclose(f);
+            return -1;
+        }
+
         fclose(f);
         return 0;
     }
+
     fclose(f);
     return -1;
 }
 
-static void trim(char *s) {
+static void trim(
+    char *s
+) {
     if (!s) return;
+
     char *p = s;
+
     while (*p == ' ' || *p == '\t') ++p;
-    if (p != s) memmove(s, p, strlen(p) + 1);
+
+    if (p != s) {
+        memmove(
+            s,
+            p,
+            strlen(p) + 1
+        );
+    }
+
     size_t n = strlen(s);
-    while (n && (s[n - 1] == ' ' || s[n - 1] == '\t' || s[n - 1] == '\r' || s[n - 1] == '\n')) s[--n] = '\0';
+
+    while (
+        n &&
+        (
+            s[n - 1] == ' ' ||
+            s[n - 1] == '\t' ||
+            s[n - 1] == '\r' ||
+            s[n - 1] == '\n'
+        )
+    ) {
+        s[--n] = '\0';
+    }
 }
 
-static int valid_log_level(const char *value) {
-    return value &&
+static int valid_log_level(
+    const char *value
+) {
+    return
+        value &&
         (
             strcmp(value, "quiet") == 0 ||
             strcmp(value, "error") == 0 ||
@@ -61,6 +138,88 @@ static int valid_log_level(const char *value) {
             strcmp(value, "debug") == 0 ||
             strcmp(value, "trace") == 0
         );
+}
+
+const char *config_target_mode_name(
+    susanin_target_mode_t mode
+) {
+    switch (mode) {
+        case SUSANIN_TARGET_INTERFACE:
+            return "interface";
+
+        case SUSANIN_TARGET_ROUTING_TABLE:
+            return "routing-table";
+
+        default:
+            return "interface";
+    }
+}
+
+int config_parse_target_mode(
+    const char *value,
+    susanin_target_mode_t *out
+) {
+    if (!value || !out) return -1;
+
+    if (strcmp(value, "interface") == 0) {
+        *out = SUSANIN_TARGET_INTERFACE;
+        return 0;
+    }
+
+    if (
+        strcmp(value, "routing-table") == 0 ||
+        strcmp(value, "table") == 0
+    ) {
+        *out = SUSANIN_TARGET_ROUTING_TABLE;
+        return 0;
+    }
+
+    return -1;
+}
+
+const char *config_accuracy_profile_name(
+    susanin_accuracy_profile_t profile
+) {
+    switch (profile) {
+        case SUSANIN_ACCURACY_FAST:
+            return "fast";
+
+        case SUSANIN_ACCURACY_MIDDLE:
+            return "middle";
+
+        case SUSANIN_ACCURACY_SLOW:
+            return "slow";
+
+        default:
+            return "fast";
+    }
+}
+
+int config_parse_accuracy_profile(
+    const char *value,
+    susanin_accuracy_profile_t *out
+) {
+    if (!value || !out) return -1;
+
+    if (strcmp(value, "fast") == 0) {
+        *out = SUSANIN_ACCURACY_FAST;
+        return 0;
+    }
+
+    if (
+        strcmp(value, "middle") == 0 ||
+        strcmp(value, "mid") == 0
+    ) {
+        *out = SUSANIN_ACCURACY_MIDDLE;
+        return 0;
+    }
+
+    if (strcmp(value, "slow") == 0) {
+        *out = SUSANIN_ACCURACY_SLOW;
+        return 0;
+    }
+
+    return -1;
 }
 
 static int parse_unsigned_range(
@@ -72,8 +231,13 @@ static int parse_unsigned_range(
     if (!value || !*value || !out) return -1;
 
     errno = 0;
+
     char *end = NULL;
-    unsigned long n = strtoul(value, &end, 10);
+    unsigned long n = strtoul(
+        value,
+        &end,
+        10
+    );
 
     if (
         errno ||
@@ -89,38 +253,150 @@ static int parse_unsigned_range(
     return 0;
 }
 
-static void load_nonsecret_config(app_config_t *cfg) {
-    snprintf(cfg->lan_buf, sizeof(cfg->lan_buf), "LAN");
-    FILE *f = fopen(SUSANIN_CONFIG_FILE, "r");
+static void load_nonsecret_config(
+    app_config_t *cfg
+) {
+    snprintf(
+        cfg->lan_buf,
+        sizeof(cfg->lan_buf),
+        "LAN"
+    );
+
+    FILE *f = fopen(
+        SUSANIN_CONFIG_FILE,
+        "r"
+    );
+
     if (!f) return;
+
     char line[512];
+
     while (fgets(line, sizeof(line), f)) {
         trim(line);
-        if (!*line || line[0] == '#') continue;
-        char *eq = strchr(line, '=');
+
+        if (
+            !*line ||
+            line[0] == '#'
+        ) {
+            continue;
+        }
+
+        char *eq = strchr(
+            line,
+            '='
+        );
+
         if (!eq) continue;
+
         *eq++ = '\0';
-        trim(line); trim(eq);
-        if (strcmp(line, "lan_list") == 0 && *eq) snprintf(cfg->lan_buf, sizeof(cfg->lan_buf), "%s", eq);
-        else if (strcmp(line, "egress_interface") == 0 && *eq) snprintf(cfg->egress_buf, sizeof(cfg->egress_buf), "%s", eq);
-        else if (strcmp(line, "routing_table") == 0 && *eq) snprintf(cfg->table_buf, sizeof(cfg->table_buf), "%s", eq);
-        else if (strcmp(line, "router_host") == 0 && *eq) {
+
+        trim(line);
+        trim(eq);
+
+        if (
+            strcmp(line, "lan_list") == 0 &&
+            *eq
+        ) {
+            snprintf(
+                cfg->lan_buf,
+                sizeof(cfg->lan_buf),
+                "%s",
+                eq
+            );
+        } else if (
+            strcmp(line, "egress_interface") == 0 &&
+            *eq
+        ) {
+            snprintf(
+                cfg->egress_buf,
+                sizeof(cfg->egress_buf),
+                "%s",
+                eq
+            );
+        } else if (
+            strcmp(line, "routing_table") == 0 &&
+            *eq
+        ) {
+            snprintf(
+                cfg->table_buf,
+                sizeof(cfg->table_buf),
+                "%s",
+                eq
+            );
+        } else if (
+            strcmp(line, "target_mode") == 0 &&
+            *eq
+        ) {
+            susanin_target_mode_t mode;
+
+            if (
+                config_parse_target_mode(
+                    eq,
+                    &mode
+                ) == 0
+            ) {
+                cfg->target_mode = mode;
+            }
+        } else if (
+            strcmp(line, "target_value") == 0 &&
+            *eq
+        ) {
+            snprintf(
+                cfg->target_value_buf,
+                sizeof(cfg->target_value_buf),
+                "%s",
+                eq
+            );
+        } else if (
+            strcmp(line, "accuracy_profile") == 0 &&
+            *eq
+        ) {
+            susanin_accuracy_profile_t profile;
+
+            if (
+                config_parse_accuracy_profile(
+                    eq,
+                    &profile
+                ) == 0
+            ) {
+                cfg->accuracy_profile = profile;
+            }
+        } else if (
+            strcmp(line, "router_host") == 0 &&
+            *eq
+        ) {
             snprintf(
                 cfg->host_buf,
                 sizeof(cfg->host_buf),
                 "%s",
                 eq
             );
+
             cfg->host_configured = 1;
-        }
-        else if (strcmp(line, "router_port") == 0 && *eq) {
-            errno = 0; char *end = NULL; long p = strtol(eq, &end, 10);
-            if (!errno && end && !*end && p >= 1 && p <= 65535) {
+        } else if (
+            strcmp(line, "router_port") == 0 &&
+            *eq
+        ) {
+            errno = 0;
+
+            char *end = NULL;
+            long p = strtol(
+                eq,
+                &end,
+                10
+            );
+
+            if (
+                !errno &&
+                end &&
+                !*end &&
+                p >= 1 &&
+                p <= 65535
+            ) {
                 cfg->port = (uint16_t)p;
                 cfg->port_configured = 1;
             }
-        }
-        else if (
+        } else if (
             strcmp(line, "log_level") == 0 &&
             valid_log_level(eq)
         ) {
@@ -130,16 +406,21 @@ static void load_nonsecret_config(app_config_t *cfg) {
                 "%s",
                 eq
             );
-        }
-        else if (strcmp(line, "diagnostics") == 0) {
+        } else if (
+            strcmp(line, "diagnostics") == 0
+        ) {
             if (strcmp(eq, "on") == 0) {
                 cfg->diagnostics_enabled = 1;
-            } else if (strcmp(eq, "off") == 0) {
+            } else if (
+                strcmp(eq, "off") == 0
+            ) {
                 cfg->diagnostics_enabled = 0;
             }
-        }
-        else if (
-            strcmp(line, "diagnostic_max_size_mb") == 0
+        } else if (
+            strcmp(
+                line,
+                "diagnostic_max_size_mb"
+            ) == 0
         ) {
             unsigned value = 0;
 
@@ -153,9 +434,11 @@ static void load_nonsecret_config(app_config_t *cfg) {
             ) {
                 cfg->diagnostic_max_size_mb = value;
             }
-        }
-        else if (
-            strcmp(line, "diagnostic_max_files") == 0
+        } else if (
+            strcmp(
+                line,
+                "diagnostic_max_files"
+            ) == 0
         ) {
             unsigned value = 0;
 
@@ -171,14 +454,28 @@ static void load_nonsecret_config(app_config_t *cfg) {
             }
         }
     }
+
     fclose(f);
 }
 
-int config_load_local(app_config_t *cfg) {
+int config_load_local(
+    app_config_t *cfg
+) {
     if (!cfg) return -1;
 
-    memset(cfg, 0, sizeof(*cfg));
+    memset(
+        cfg,
+        0,
+        sizeof(*cfg)
+    );
+
     cfg->port = 8728;
+
+    cfg->target_mode =
+        SUSANIN_TARGET_INTERFACE;
+
+    cfg->accuracy_profile =
+        SUSANIN_ACCURACY_FAST;
 
     snprintf(
         cfg->log_level_buf,
@@ -194,13 +491,47 @@ int config_load_local(app_config_t *cfg) {
 
     if (
         !cfg->host_buf[0] &&
-        infer_default_gateway(cfg->host_buf) < 0
+        infer_default_gateway(
+            cfg->host_buf
+        ) < 0
     ) {
         snprintf(
             cfg->host_buf,
             sizeof(cfg->host_buf),
             "172.31.254.1"
         );
+    }
+
+    /*
+     * Backward compatibility with every v0.11.x config:
+     * if target_* is absent, infer interface mode from the
+     * already stored egress_interface.
+     */
+    if (!cfg->target_value_buf[0]) {
+        if (
+            cfg->target_mode ==
+                SUSANIN_TARGET_ROUTING_TABLE &&
+            cfg->table_buf[0]
+        ) {
+            snprintf(
+                cfg->target_value_buf,
+                sizeof(cfg->target_value_buf),
+                "%s",
+                cfg->table_buf
+            );
+        } else if (
+            cfg->egress_buf[0]
+        ) {
+            cfg->target_mode =
+                SUSANIN_TARGET_INTERFACE;
+
+            snprintf(
+                cfg->target_value_buf,
+                sizeof(cfg->target_value_buf),
+                "%s",
+                cfg->egress_buf
+            );
+        }
     }
 
     cfg->host = cfg->host_buf;
@@ -222,8 +553,19 @@ int config_load_local(app_config_t *cfg) {
             ? cfg->table_buf
             : NULL;
 
-    cfg->log_level = cfg->log_level_buf;
+    cfg->target_value =
+        cfg->target_value_buf[0]
+            ? cfg->target_value_buf
+            : NULL;
 
+    cfg->log_level =
+        cfg->log_level_buf;
+
+    /*
+     * dev1 deliberately keeps the proven v0.11.5
+     * data-plane contract: both resolved values must exist.
+     * The target abstraction is already persistent/user-facing.
+     */
     cfg->selection_configured =
         cfg->egress_interface &&
         cfg->routing_table;
@@ -231,8 +573,12 @@ int config_load_local(app_config_t *cfg) {
     return 0;
 }
 
-int config_load(app_config_t *cfg) {
-    if (config_load_local(cfg) < 0) {
+int config_load(
+    app_config_t *cfg
+) {
+    if (
+        config_load_local(cfg) < 0
+    ) {
         return -1;
     }
 
@@ -258,15 +604,22 @@ int config_load(app_config_t *cfg) {
         return -1;
     }
 
-    cfg->password = cfg->password_buf;
+    cfg->password =
+        cfg->password_buf;
 
     return 0;
 }
 
-static int write_nonsecret_config(const app_config_t *cfg) {
+static int write_nonsecret_config(
+    const app_config_t *cfg
+) {
     if (!cfg) return -1;
 
-    FILE *f = fopen(SUSANIN_CONFIG_FILE ".tmp", "w");
+    FILE *f = fopen(
+        SUSANIN_CONFIG_FILE ".tmp",
+        "w"
+    );
+
     if (!f) {
         perror("open Susanin config");
         return -1;
@@ -280,8 +633,29 @@ static int write_nonsecret_config(const app_config_t *cfg) {
     fprintf(
         f,
         "lan_list=%s\n",
-        cfg->lan_list ? cfg->lan_list : "LAN"
+        cfg->lan_list
+            ? cfg->lan_list
+            : "LAN"
     );
+
+    fprintf(
+        f,
+        "target_mode=%s\n",
+        config_target_mode_name(
+            cfg->target_mode
+        )
+    );
+
+    if (
+        cfg->target_value &&
+        *cfg->target_value
+    ) {
+        fprintf(
+            f,
+            "target_value=%s\n",
+            cfg->target_value
+        );
+    }
 
     if (
         cfg->egress_interface &&
@@ -305,6 +679,14 @@ static int write_nonsecret_config(const app_config_t *cfg) {
         );
     }
 
+    fprintf(
+        f,
+        "accuracy_profile=%s\n",
+        config_accuracy_profile_name(
+            cfg->accuracy_profile
+        )
+    );
+
     if (
         cfg->host_configured &&
         cfg->host &&
@@ -317,7 +699,9 @@ static int write_nonsecret_config(const app_config_t *cfg) {
         );
     }
 
-    if (cfg->port_configured) {
+    if (
+        cfg->port_configured
+    ) {
         fprintf(
             f,
             "router_port=%u\n",
@@ -328,13 +712,17 @@ static int write_nonsecret_config(const app_config_t *cfg) {
     fprintf(
         f,
         "log_level=%s\n",
-        cfg->log_level ? cfg->log_level : "info"
+        cfg->log_level
+            ? cfg->log_level
+            : "info"
     );
 
     fprintf(
         f,
         "diagnostics=%s\n",
-        cfg->diagnostics_enabled ? "on" : "off"
+        cfg->diagnostics_enabled
+            ? "on"
+            : "off"
     );
 
     fprintf(
@@ -351,7 +739,11 @@ static int write_nonsecret_config(const app_config_t *cfg) {
 
     if (fclose(f) != 0) {
         perror("close Susanin config");
-        remove(SUSANIN_CONFIG_FILE ".tmp");
+
+        remove(
+            SUSANIN_CONFIG_FILE ".tmp"
+        );
+
         return -1;
     }
 
@@ -362,35 +754,85 @@ static int write_nonsecret_config(const app_config_t *cfg) {
         ) != 0
     ) {
         perror("rename Susanin config");
-        remove(SUSANIN_CONFIG_FILE ".tmp");
+
+        remove(
+            SUSANIN_CONFIG_FILE ".tmp"
+        );
+
         return -1;
     }
 
     return 0;
 }
 
-int config_save_selection(app_config_t *cfg, const char *egress, const char *table) {
-    if (!cfg || !egress || !*egress || !table || !*table) return -1;
+int config_save_target(
+    app_config_t *cfg,
+    susanin_target_mode_t mode,
+    const char *target_value,
+    const char *resolved_egress,
+    const char *resolved_table
+) {
+    if (
+        !cfg ||
+        !target_value ||
+        !*target_value ||
+        !resolved_egress ||
+        !*resolved_egress ||
+        !resolved_table ||
+        !*resolved_table
+    ) {
+        return -1;
+    }
+
+    cfg->target_mode = mode;
+
+    snprintf(
+        cfg->target_value_buf,
+        sizeof(cfg->target_value_buf),
+        "%s",
+        target_value
+    );
 
     snprintf(
         cfg->egress_buf,
         sizeof(cfg->egress_buf),
         "%s",
-        egress
+        resolved_egress
     );
 
     snprintf(
         cfg->table_buf,
         sizeof(cfg->table_buf),
         "%s",
-        table
+        resolved_table
     );
 
-    cfg->egress_interface = cfg->egress_buf;
-    cfg->routing_table = cfg->table_buf;
+    cfg->target_value =
+        cfg->target_value_buf;
+
+    cfg->egress_interface =
+        cfg->egress_buf;
+
+    cfg->routing_table =
+        cfg->table_buf;
+
     cfg->selection_configured = 1;
 
     return write_nonsecret_config(cfg);
+}
+
+int config_save_selection(
+    app_config_t *cfg,
+    const char *egress,
+    const char *table
+) {
+    return config_save_target(
+        cfg,
+        SUSANIN_TARGET_INTERFACE,
+        egress,
+        egress,
+        table
+    );
 }
 
 int config_set_option(
@@ -398,14 +840,27 @@ int config_set_option(
     const char *key,
     const char *value
 ) {
-    if (!cfg || !key || !value) return -1;
+    if (
+        !cfg ||
+        !key ||
+        !value
+    ) {
+        return -1;
+    }
 
-    if (strcmp(key, "log-level") == 0) {
+    if (
+        strcmp(
+            key,
+            "log-level"
+        ) == 0
+    ) {
         if (!valid_log_level(value)) {
             fprintf(
                 stderr,
-                "Invalid log level. Use: quiet, error, info, debug, trace\n"
+                "Invalid log level. "
+                "Use: quiet, error, info, debug, trace\n"
             );
+
             return -1;
         }
 
@@ -415,24 +870,76 @@ int config_set_option(
             "%s",
             value
         );
-        cfg->log_level = cfg->log_level_buf;
 
-    } else if (strcmp(key, "diagnostics") == 0) {
+        cfg->log_level =
+            cfg->log_level_buf;
 
-        if (strcmp(value, "on") == 0) {
+    } else if (
+        strcmp(
+            key,
+            "accuracy-profile"
+        ) == 0 ||
+        strcmp(
+            key,
+            "accuracy"
+        ) == 0
+    ) {
+        susanin_accuracy_profile_t profile;
+
+        if (
+            config_parse_accuracy_profile(
+                value,
+                &profile
+            ) < 0
+        ) {
+            fprintf(
+                stderr,
+                "Invalid accuracy profile. "
+                "Use: fast, middle, slow\n"
+            );
+
+            return -1;
+        }
+
+        cfg->accuracy_profile =
+            profile;
+
+    } else if (
+        strcmp(
+            key,
+            "diagnostics"
+        ) == 0
+    ) {
+
+        if (
+            strcmp(
+                value,
+                "on"
+            ) == 0
+        ) {
             cfg->diagnostics_enabled = 1;
-        } else if (strcmp(value, "off") == 0) {
+        } else if (
+            strcmp(
+                value,
+                "off"
+            ) == 0
+        ) {
             cfg->diagnostics_enabled = 0;
         } else {
             fprintf(
                 stderr,
-                "Invalid diagnostics value. Use: on or off\n"
+                "Invalid diagnostics value. "
+                "Use: on or off\n"
             );
+
             return -1;
         }
 
     } else if (
-        strcmp(key, "diagnostic-max-size-mb") == 0
+        strcmp(
+            key,
+            "diagnostic-max-size-mb"
+        ) == 0
     ) {
         unsigned n = 0;
 
@@ -446,15 +953,20 @@ int config_set_option(
         ) {
             fprintf(
                 stderr,
-                "Invalid diagnostic-max-size-mb. Use: 1..100\n"
+                "Invalid diagnostic-max-size-mb. "
+                "Use: 1..100\n"
             );
+
             return -1;
         }
 
         cfg->diagnostic_max_size_mb = n;
 
     } else if (
-        strcmp(key, "diagnostic-max-files") == 0
+        strcmp(
+            key,
+            "diagnostic-max-files"
+        ) == 0
     ) {
         unsigned n = 0;
 
@@ -468,8 +980,10 @@ int config_set_option(
         ) {
             fprintf(
                 stderr,
-                "Invalid diagnostic-max-files. Use: 1..10\n"
+                "Invalid diagnostic-max-files. "
+                "Use: 1..10\n"
             );
+
             return -1;
         }
 
@@ -481,43 +995,132 @@ int config_set_option(
             "Unknown config key: %s\n",
             key
         );
+
         return -1;
     }
 
     return write_nonsecret_config(cfg);
 }
 
-void config_print_settings(const app_config_t *cfg) {
+void config_print_settings(
+    const app_config_t *cfg
+) {
     if (!cfg) return;
 
-    printf("=== SUSANIN SETTINGS ===\n\n");
-
     printf(
-        "Logging level        : %s\n",
-        cfg->log_level ? cfg->log_level : "info"
+        "=== SUSANIN SETTINGS ===\n\n"
     );
 
     printf(
-        "Diagnostic recorder  : %s\n",
-        cfg->diagnostics_enabled ? "on" : "off"
+        "Routing target mode   : %s\n",
+        config_target_mode_name(
+            cfg->target_mode
+        )
     );
 
     printf(
-        "Diagnostic max size  : %u MB\n",
+        "Routing target value  : %s\n",
+        cfg->target_value
+            ? cfg->target_value
+            : "<not selected>"
+    );
+
+    printf(
+        "Resolved egress       : %s\n",
+        cfg->egress_interface
+            ? cfg->egress_interface
+            : "<not resolved>"
+    );
+
+    printf(
+        "Resolved table        : %s\n",
+        cfg->routing_table
+            ? cfg->routing_table
+            : "<not resolved>"
+    );
+
+    printf(
+        "Accuracy profile      : %s\n",
+        config_accuracy_profile_name(
+            cfg->accuracy_profile
+        )
+    );
+
+    printf(
+        "Logging level         : %s\n",
+        cfg->log_level
+            ? cfg->log_level
+            : "info"
+    );
+
+    printf(
+        "Diagnostic recorder   : %s\n",
+        cfg->diagnostics_enabled
+            ? "on"
+            : "off"
+    );
+
+    printf(
+        "Diagnostic max size   : %u MB\n",
         cfg->diagnostic_max_size_mb
     );
 
     printf(
-        "Diagnostic max files : %u\n",
+        "Diagnostic max files  : %u\n",
         cfg->diagnostic_max_files
     );
 }
 
-void config_print_safe(const app_config_t *cfg) {
-    printf("Project: Susanin\n");
-    printf("Router: %s:%u\n", cfg->host, (unsigned)cfg->port);
-    printf("Auth: auto-provisioned local agent\n");
-    printf("LAN interface-list: %s\n", cfg->lan_list);
-    printf("Egress interface: %s\n", cfg->egress_interface ? cfg->egress_interface : "<not selected>");
-    printf("Routing table: %s\n", cfg->routing_table ? cfg->routing_table : "<auto-detect after selection>");
+void config_print_safe(
+    const app_config_t *cfg
+) {
+    printf(
+        "Project: Susanin\n"
+    );
+
+    printf(
+        "Router: %s:%u\n",
+        cfg->host,
+        (unsigned)cfg->port
+    );
+
+    printf(
+        "Auth: auto-provisioned local agent\n"
+    );
+
+    printf(
+        "LAN interface-list: %s\n",
+        cfg->lan_list
+    );
+
+    printf(
+        "Target: %s %s\n",
+        config_target_mode_name(
+            cfg->target_mode
+        ),
+        cfg->target_value
+            ? cfg->target_value
+            : "<not selected>"
+    );
+
+    printf(
+        "Egress interface: %s\n",
+        cfg->egress_interface
+            ? cfg->egress_interface
+            : "<not resolved>"
+    );
+
+    printf(
+        "Routing table: %s\n",
+        cfg->routing_table
+            ? cfg->routing_table
+            : "<not resolved>"
+    );
+
+    printf(
+        "Accuracy profile: %s\n",
+        config_accuracy_profile_name(
+            cfg->accuracy_profile
+        )
+    );
 }

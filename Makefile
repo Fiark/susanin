@@ -3,7 +3,7 @@ CFLAGS ?= -O2 -pipe -std=c11 -Wall -Wextra -Wpedantic -Werror
 CPPFLAGS ?= -Isrc
 LDFLAGS ?=
 
-SRC := src/main.c src/routeros_api.c src/config.c src/diag.c src/telemetry.c src/routerlog.c src/discovery.c src/status.c src/apply.c src/fingerprint.c src/snapshot.c src/renderer.c src/validate.c src/stage.c src/promote.c src/setup.c src/install.c
+SRC := src/main.c src/routeros_api.c src/config.c src/direct.c src/target.c src/diag.c src/telemetry.c src/routerlog.c src/discovery.c src/status.c src/apply.c src/fingerprint.c src/snapshot.c src/renderer.c src/validate.c src/stage.c src/promote.c src/setup.c src/install.c
 OBJ := $(SRC:.c=.o)
 BIN := susanin
 
