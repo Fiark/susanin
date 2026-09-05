@@ -1,5 +1,28 @@
 # Tested scenarios
 
+## v0.11.5 stable reference validation
+
+The stable RouterOS data-plane source is intentionally unchanged
+from the known-good v0.11.5-dev4 snapshot.
+
+Validated on the ARM64 / RouterOS 7.23.3 reference router:
+
+- generated source validation `PASS=4 FAIL=0`;
+- stage objects validated;
+- promotion safety gates passed;
+- transactional promotion completed;
+- post-promotion reconciliation returned
+  `KEEP=16 CREATE=0 UPDATE=0 BLOCKERS=0`;
+- four RouterOS schedulers continued executing;
+- active test/L1 routing was observed;
+- transient TEST states continued to appear and expire;
+- controller remained independent of the running RouterOS data plane;
+- no new `no such item (4)` was observed during the recorded
+  multi-hour v0.11.5-dev4 soak window after promotion.
+
+Stable v0.11.5 changes only version/bootstrap/release metadata
+and documentation relative to the dev4 data-plane snapshot.
+
 ## Public pilot baseline — v0.11.3
 
 Public pilot baseline: **Susanin v0.11.3**.

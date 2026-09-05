@@ -1,48 +1,139 @@
-name: Bug report
-about: Report a reproducible Susanin problem
+
+name: "Bug report / Сообщить об ошибке"
+description: "Report a reproducible Susanin problem after diagnostic capture"
 title: "[bug] "
-labels: [bug]
+labels:
+  - bug
+
 body:
   - type: markdown
     attributes:
       value: |
-        Susanin is a pilot project. Please sanitize all logs. Never attach RouterOS backups, show-sensitive exports, VPN private keys or passwords.
+        ## Before opening a Bug Issue / Перед созданием Bug Issue
+
+        Сначала включите internal Susanin diagnostics:
+
+        1. `susanin diag start`
+        2. reproduce the problem
+        3. `susanin diag sample`
+        4. `susanin diag errors`
+        5. `susanin status`
+        6. `susanin apply --dry-run`
+        7. `susanin diag stop`
+
+        Full guide: `docs/LOGGING.md`
+
+        NEVER attach RouterOS backups, `show-sensitive` exports,
+        VPN private keys, passwords or
+        `susanin-secrets/routeros_password`.
+
+  - type: checkboxes
+    id: diagnostics
+    attributes:
+      label: Diagnostic capture
+      options:
+        - label: I enabled Susanin diagnostics before reproducing the problem and ran `diag sample` and `diag errors` afterwards.
+          required: true
+        - label: I reviewed and sanitized all attached logs and removed secrets/private keys/passwords.
+          required: true
+
   - type: input
     id: version
     attributes:
       label: Susanin version
-      placeholder: 0.11.4-rc1
+      description: Output of `susanin version`
+      placeholder: "0.11.5"
     validations:
       required: true
+
   - type: input
     id: routeros
     attributes:
       label: RouterOS version
-      placeholder: 7.23.3
+      placeholder: "7.23.3"
     validations:
       required: true
+
   - type: input
     id: arch
     attributes:
       label: Architecture / device family
-      placeholder: ARM64 / hAP ax3 (do not include serial number)
+      description: Do not include device serial number.
+      placeholder: "ARM64 / hAP ax3"
     validations:
       required: true
+
   - type: textarea
     id: topology
     attributes:
-      label: Network/tunnel topology
-      description: LAN list, tunnel type, whether a routing table already existed. Do not include secrets.
+      label: Network / tunnel topology
+      description: Describe LAN list, LAN networks, tunnel type and routing table. Do not include credentials.
+      placeholder: |
+        LAN list: LAN
+        LAN network(s): ...
+        Tunnel: WireGuard/AmneziaWG
+        Routing table: ...
     validations:
       required: true
+
   - type: textarea
     id: reproduce
     attributes:
       label: Steps to reproduce
+      description: Include approximate problem time.
     validations:
       required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: status
+    attributes:
+      label: susanin status
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: dryrun
+    attributes:
+      label: susanin apply --dry-run
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: sample
+    attributes:
+      label: susanin diag sample
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: errors
+    attributes:
+      label: susanin diag errors
+      render: text
+    validations:
+      required: true
+
   - type: textarea
     id: logs
     attributes:
-      label: Sanitized status/logs
-      description: Prefer `susanin status`, `apply --dry-run`, and relevant `AUTO-AWG:` lines.
+      label: Sanitized AUTO-AWG / diagnostic logs
+      description: Paste relevant sanitized lines or attach sanitized susanin-debug.ndjson.
+    validations:
+      required: true

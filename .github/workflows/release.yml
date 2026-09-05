@@ -144,15 +144,54 @@ jobs:
               > SHA256SUMS
           )
 
-      - name: Create/attach prerelease
+      - name: Create/attach release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        shell: bash
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 \
-            || gh release create "$TAG" \
-                 --title "$TAG — pilot" \
-                 --generate-notes \
-                 --prerelease
+          set -euo pipefail
+
+          VERSION="${TAG#v}"
+          NOTES_FILE="docs/RELEASE_NOTES_v${VERSION}.md"
+
+          if [[ "$VERSION" == *-* ]]; then
+            RELEASE_KIND="prerelease"
+            TITLE="$TAG — prerelease"
+          else
+            RELEASE_KIND="stable"
+            TITLE="$TAG"
+          fi
+
+          echo "Release kind: $RELEASE_KIND"
+          echo "Release title: $TITLE"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release already exists: $TAG"
+          else
+            if [[ -f "$NOTES_FILE" ]]; then
+              if [[ "$RELEASE_KIND" == "prerelease" ]]; then
+                gh release create "$TAG" \
+                  --title "$TITLE" \
+                  --notes-file "$NOTES_FILE" \
+                  --prerelease
+              else
+                gh release create "$TAG" \
+                  --title "$TITLE" \
+                  --notes-file "$NOTES_FILE"
+              fi
+            else
+              if [[ "$RELEASE_KIND" == "prerelease" ]]; then
+                gh release create "$TAG" \
+                  --title "$TITLE" \
+                  --generate-notes \
+                  --prerelease
+              else
+                gh release create "$TAG" \
+                  --title "$TITLE" \
+                  --generate-notes
+              fi
+            fi
+          fi
 
           gh release upload "$TAG" dist/* --clobber

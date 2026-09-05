@@ -3,36 +3,36 @@
 [![C11](https://img.shields.io/badge/C-11-blue)](https://en.cppreference.com/w/c/11)
 [![RouterOS](https://img.shields.io/badge/RouterOS-tested%207.23.3-293239)](https://mikrotik.com/)
 [![Architecture](https://img.shields.io/badge/arch-ARM64-6a5acd)](#requirements)
-[![Stage](https://img.shields.io/badge/status-pilot-orange)](https://github.com/Fiark/susanin/releases/tag/v0.11.3)
+[![Stage](https://img.shields.io/badge/status-stable-brightgreen)](https://github.com/Fiark/susanin/releases/tag/v0.11.5)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/Fiark/susanin?include_prereleases&label=pilot%20release)](https://github.com/Fiark/susanin/releases/tag/v0.11.3)
+[![Release](https://img.shields.io/github/v/release/Fiark/susanin?label=stable%20release)](https://github.com/Fiark/susanin/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Fiark/susanin/total?label=downloads)](https://github.com/Fiark/susanin/releases)
 
 > [!WARNING]
-> **PILOT / EXPERIMENTAL**
+> **STABLE v0.11.5**
 >
-> Susanin is an early-stage project that changes RouterOS routing and firewall objects.
+> Susanin changes RouterOS routing and firewall objects.
+> Back up your MikroTik before installation or upgrade.
 >
-> Back up your MikroTik before installation.
->
-> The current public build targets **ARM64**.  
+> Public target: **ARM64**.
 > Reference test platform: **RouterOS 7.23.3**.
 
 > [!IMPORTANT]
-> ### Download the current pilot release
+> ### Current stable release
 >
-> **[Susanin v0.11.3 — pilot](https://github.com/Fiark/susanin/releases/tag/v0.11.3)**
+> **[Susanin v0.11.5](https://github.com/Fiark/susanin/releases/tag/v0.11.5)**
 >
-> Normal installation requires only:
+> Required:
 >
-> - **[susanin.tar](https://github.com/Fiark/susanin/releases/download/v0.11.3/susanin.tar)** — ARM64 container image
-> - **[install.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.3/install.rsc)** — RouterOS credentialless bootstrap
+> - **[susanin.tar](https://github.com/Fiark/susanin/releases/download/v0.11.5/susanin.tar)**
+> - **[install.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.5/install.rsc)**
 >
-> Additional files:
+> User guide: **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)**
 >
-> - [SHA256SUMS](https://github.com/Fiark/susanin/releases/download/v0.11.3/SHA256SUMS)
-> - [uninstall.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.3/uninstall.rsc)
-> - [uninstall-controller.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.3/uninstall-controller.rsc)
+> Diagnostics: **[docs/LOGGING.md](docs/LOGGING.md)**
+>
+> Before filing a Bug Issue, enable Susanin diagnostics,
+> reproduce the problem and run `diag sample` and `diag errors`.
 
 ![Susanin](docs/images/hero.svg)
 
@@ -115,6 +115,26 @@ Expected healthy state:
 KEEP=16 CREATE=0 UPDATE=0 BLOCKERS=0
 Result: IN SYNC structurally.
 ```
+
+## Diagnostics before opening a Bug Issue
+
+Collect a diagnostic capture first:
+
+~~~text
+susanin diag start
+reproduce the problem
+susanin diag sample
+susanin diag errors
+susanin status
+susanin apply --dry-run
+susanin diag stop
+~~~
+
+See [docs/LOGGING.md](docs/LOGGING.md).
+
+Never upload RouterOS backups, `show-sensitive` exports,
+private keys, passwords or `susanin-secrets/routeros_password`.
+
 
 ## Architecture
 

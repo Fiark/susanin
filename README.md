@@ -1,37 +1,40 @@
-> **PILOT / EXPERIMENTAL.** Susanin is an early-stage project that actively changes RouterOS routing and firewall objects. Make a backup before installation. At the moment the public target is **ARM64** and the reference test platform is **RouterOS 7.23.3**.
+> **STABLE v0.11.5.** Susanin изменяет RouterOS routing/firewall objects, поэтому перед установкой или обновлением обязательно сделайте backup. Публичный target стабильного релиза — **ARM64**, reference test platform — **RouterOS 7.23.3**.
 >
-> This project is not affiliated with or endorsed by MikroTik, Amnezia, WireGuard, OpenAI or the authors of the projects mentioned below.
+> Проект не связан и не аффилирован с MikroTik, Amnezia, WireGuard, OpenAI или авторами упомянутых сторонних проектов.
 
 # Сусанин — адаптивная маршрутизация через VPN для MikroTik
 
 [![C11](https://img.shields.io/badge/C-11-blue)](https://en.cppreference.com/w/c/11)
 [![RouterOS](https://img.shields.io/badge/RouterOS-tested%207.23.3-293239)](https://mikrotik.com/)
 [![Architecture](https://img.shields.io/badge/arch-ARM64-6a5acd)](#требования)
-[![Stage](https://img.shields.io/badge/status-pilot-orange)](#статус-проекта)
+[![Stage](https://img.shields.io/badge/status-stable-brightgreen)](#статус-проекта)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 
-[![Release](https://img.shields.io/github/v/release/Fiark/susanin?include_prereleases&label=pilot%20release)](https://github.com/Fiark/susanin/releases/tag/v0.11.3)
+[![Release](https://img.shields.io/github/v/release/Fiark/susanin?label=stable%20release)](https://github.com/Fiark/susanin/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Fiark/susanin/total?label=downloads)](https://github.com/Fiark/susanin/releases)
 
 > [!IMPORTANT]
-> ### Скачать готовую пилотную версию
+> ### Скачать стабильную версию
 >
-> **Текущий публичный Release: [Susanin v0.11.3 — pilot](https://github.com/Fiark/susanin/releases/tag/v0.11.3)**
+> **Текущий стабильный Release: [Susanin v0.11.5](https://github.com/Fiark/susanin/releases/tag/v0.11.5)**
 >
-> Для обычной установки нужны только два файла:
+> Для обычной установки нужны:
 >
-> - **[susanin.tar](https://github.com/Fiark/susanin/releases/download/v0.11.3/susanin.tar)** — ARM64 container image;
-> - **[install.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.3/install.rsc)** — автоматический bootstrap для RouterOS.
+> - **[susanin.tar](https://github.com/Fiark/susanin/releases/download/v0.11.5/susanin.tar)** — ARM64 container image;
+> - **[install.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.5/install.rsc)** — automatic credentialless bootstrap.
 >
 > Дополнительно:
 >
-> - [SHA256SUMS](https://github.com/Fiark/susanin/releases/download/v0.11.3/SHA256SUMS) — контрольные суммы;
-> - [uninstall.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.3/uninstall.rsc) — полное удаление Susanin;
-> - [uninstall-controller.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.3/uninstall-controller.rsc) — удалить только controller.
+> - [SHA256SUMS](https://github.com/Fiark/susanin/releases/download/v0.11.5/SHA256SUMS);
+> - [uninstall.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.5/uninstall.rsc);
+> - [uninstall-controller.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.5/uninstall-controller.rsc).
 >
 > **Перед установкой обязательно сделайте backup MikroTik.**
-
+>
+> Полное руководство: **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)**
+>
+> Логирование и диагностика: **[docs/LOGGING.md](docs/LOGGING.md)**
 
 ![Susanin](docs/images/hero.svg)
 
@@ -59,7 +62,7 @@
 
 Сильным толчком стал проект **[timbrs/amneziawg-mikrotik-c](https://github.com/timbrs/amneziawg-mikrotik-c)** и подробная статья автора **[«Наконец-то: AmneziaWG в Mikrotik»](https://habr.com/ru/articles/1002824/)**. Он показал очень практичный подход: не пытаться переписать весь сетевой стек, а оставить то, что RouterOS уже умеет хорошо, и добавить минимальный недостающий слой. Susanin следует той же философии, но решает другую задачу — автоматический выбор маршрута для проблемных направлений.
 
-Разработка велась с активным использованием ChatGPT. Автор проекта — сетевой инженер и специалист по ИБ, а не профессиональный разработчик C. Поэтому код, протокол и поведение проверялись итеративно на реальном MikroTik, а найденные ошибки и ограничения RouterOS фиксировались по мере тестирования. Это одна из причин, почему проект пока имеет статус **pilot**.
+Разработка велась с активным использованием ChatGPT. Автор проекта — сетевой инженер и специалист по ИБ, а не профессиональный разработчик C. Поэтому код, протокол и поведение проверялись итеративно на реальном MikroTik, а найденные ошибки и ограничения RouterOS фиксировались по мере тестирования. В v0.11.5 проект получил первый стабильный релиз для проверенного ARM64 / RouterOS 7.23.3 reference profile.
 
 ## Содержание
 
@@ -71,6 +74,8 @@
 - [Быстрый старт](#быстрый-старт)
 - [Проверка после установки](#проверка-после-установки)
 - [Логи и наблюдение](#логи-и-наблюдение)
+- [Полное руководство](docs/USER_GUIDE.md)
+- [Диагностика перед Issue](docs/LOGGING.md)
 - [Обновление](#обновление)
 - [Удаление](#удаление)
 - [Безопасность bootstrap](#безопасность-bootstrap)
@@ -233,7 +238,7 @@ AUTO-AWG: tunnel UP, recovery TCP=0 UDP=0
 - минимум одна IPv4 LAN-сеть на интерфейсе из списка `LAN`;
 - уже работающий route-based VPN/tunnel interface с IPv4-адресом.
 
-> Другие RouterOS версии могут работать, но пока не считаются полноценно проверенными. Другие архитектуры в публичном пилоте не поддерживаются.
+> Другие RouterOS версии могут работать, но пока не считаются полноценно проверенными. В стабильном v0.11.5 публично поддерживается ARM64.
 
 ### Подготовка RouterOS
 
@@ -438,91 +443,137 @@ Bootstrap добавляет `172.31.254.2/32` в allowed addresses и узко�
 
 ## Логи и наблюдение
 
-### Живой лог решений
+Susanin имеет два диагностических механизма:
 
-```routeros
+1. RouterOS decision log `AUTO-AWG:`;
+2. internal NDJSON diagnostic recorder.
+
+Настройки:
+
+~~~routeros
+/container/shell susanin-controller \
+  cmd="/usr/local/bin/susanin config show" \
+  no-sh timeout=30
+~~~
+
+Live decision log:
+
+~~~routeros
 /log print follow-only where message~"AUTO-AWG:"
-```
+~~~
 
-Или последние события:
+Internal recorder:
 
-```routeros
-/log print where message~"AUTO-AWG:"
-```
+~~~routeros
+/container/shell susanin-controller \
+  cmd="/usr/local/bin/susanin diag start" \
+  no-sh timeout=30
+~~~
 
-Основные сообщения:
+После воспроизведения проблемы:
 
-| Сообщение | Что означает |
-|---|---|
-| `FAST TCP-SYN` | исходящие SYN повторяются без ответа |
-| `FAST TCP-CLOSE` | короткая неуспешная TCP-сессия |
-| `FAST QUIC` | UDP/443 без reply |
-| `SOFT TCP-STALL` | соединение похоже на зависшее |
-| `SOFT TCP-LATE-STALL` | stall подтверждён debounce-логикой |
-| `SOFT UDP` | UDP-трафик без ответов |
-| `CONFIRMED ... via tcp` | повтор через VPN помог для TCP |
-| `CONFIRMED ... via udp` | повтор через VPN помог для UDP |
-| `tunnel DOWN ... DIRECT` | health перевёл систему в fail-open |
-| `tunnel UP ...` | туннель восстановился, adaptive rules включены |
+~~~routeros
+/container/shell susanin-controller cmd="/usr/local/bin/susanin diag sample" no-sh timeout=60
+/container/shell susanin-controller cmd="/usr/local/bin/susanin diag errors" no-sh timeout=60
+/container/shell susanin-controller cmd="/usr/local/bin/susanin diag stop" no-sh timeout=30
+~~~
 
-Логи содержат destination IP/порт, но не payload, не доменное имя и не пользовательские credentials.
+Diagnostic file:
 
-### Состояние обученного кэша
+~~~text
+/data/diagnostics/susanin-debug.ndjson
+~~~
 
-```routeros
+> [!IMPORTANT]
+> Перед созданием технического Bug Issue сначала снимите диагностику
+> внутренними механизмами Susanin.
+>
+> Полная процедура: **[docs/LOGGING.md](docs/LOGGING.md)**
+
+`diag start` не является непрерывной копией RouterOS `/log`.
+
+Recorder пишет события controller, а `diag sample` и `diag errors`
+добавляют RouterOS telemetry/error summaries.
+
+Не публикуйте RouterOS backup, `show-sensitive` export,
+VPN private keys, passwords или `susanin-secrets/routeros_password`.
+
+Состояние cache:
+
+~~~routeros
 /ip firewall address-list print where list~"auto_awg_"
-```
+~~~
 
-Или компактно через controller:
+Health:
 
-```routeros
-/container/shell susanin-controller cmd="/usr/local/bin/susanin status" no-sh timeout=60
-```
-
-### Health
-
-```routeros
-/ip firewall address-list print where list="auto_awg_health_fail"
-/ip firewall mangle print where comment~"^AUTO-AWG:"
-```
-
-Если туннель временно недоступен, managed mangle может быть отключён — это fail-open. После восстановления HEALTH должен включить правила обратно.
-
-### Диагностика control plane
-
-```routeros
-/container print detail where name="susanin-controller"
-/container mounts print detail where list~"susanin"
-/ip service print detail where name="api"
-/ip firewall filter print detail where comment="SUSANIN: allow controller API"
-```
+~~~routeros
+/log print where message~"AUTO-AWG: tunnel"
+~~~
 
 ## Команды controller
 
-```text
-susanin discover
-susanin plan
+### Обычному пользователю
+
+~~~text
+susanin setup
 susanin status
 susanin apply --dry-run
+susanin version
+~~~
+
+### Discovery / validation
+
+~~~text
+susanin discover
+susanin plan
 susanin snapshot
 susanin render
 susanin validate
+~~~
+
+### Installation / update / rollback
+
+~~~text
+susanin install --dry-run
+susanin install
 susanin stage
 susanin stage-clean
 susanin promote --dry-run
 susanin promote
 susanin rollback
-susanin setup
-susanin install --dry-run
-susanin install
-susanin version
-```
+~~~
 
-Обычному пользователю в первую очередь нужны `setup`, `status` и `apply --dry-run`.
+### Runtime configuration
+
+~~~text
+susanin config show
+susanin config set log-level quiet|error|info|debug|trace
+susanin config set diagnostics on|off
+susanin config set diagnostic-max-size-mb 1..100
+susanin config set diagnostic-max-files 1..10
+~~~
+
+### Diagnostics
+
+~~~text
+susanin diag status
+susanin diag start
+susanin diag stop
+susanin diag sample
+susanin diag errors
+~~~
+
+Полное руководство:
+
+**[docs/USER_GUIDE.md](docs/USER_GUIDE.md)**
+
+Logging / Bug Issue diagnostics:
+
+**[docs/LOGGING.md](docs/LOGGING.md)**
 
 ## Обновление
 
-Пилотная схема обновления controller:
+Стабильная схема обновления controller:
 
 1. Сделайте backup RouterOS.
 2. Скачайте новый `susanin.tar` и `install.rsc`.
@@ -582,7 +633,7 @@ Susanin container
 - secret не передаётся в argv;
 - container читает его из `/run/secrets/routeros_password`;
 - temporary bootstrap worker имеет повышенные права только на время bootstrap и удаляется одноразовым cleaner;
-- API 8728 в текущем пилоте остаётся plain RouterOS API, но доступ ограничивается внутренней изолированной сетью controller;
+- API 8728 в текущей версии остаётся plain RouterOS API, но доступ ограничивается внутренней изолированной сетью controller;
 - API-SSL — кандидат для будущей версии.
 
 Подробно: [SECURITY.md](SECURITY.md).
@@ -667,7 +718,7 @@ SUSANIN: masquerade selected tunnel
 
 ### `no route-based tunnel/VPN interfaces detected`
 
-Проверьте, что tunnel существует, не disabled и имеет тип, который Susanin считает route-based. Для первого пилота наиболее проверенный вариант — WireGuard interface.
+Проверьте, что tunnel существует, не disabled и имеет тип, который Susanin считает route-based. Для v0.11.5 наиболее проверенный вариант — WireGuard interface.
 
 ### `selected egress has no IPv4 address`
 
@@ -762,35 +813,58 @@ RouterOS может отвечать на пустой результат:
 - disabled API service на старом backup;
 - необходимость self-cleanup temporary elevated bootstrap helper.
 
-Эти детали — одна из причин, почему проект пока называется пилотом.
+Эти детали остаются важной частью осторожной модели обновления и диагностики Susanin.
 
 ## Статус проекта
 
-**Очень пилотный.** Это не «поставил на тысячу роутеров и забыл».
+**v0.11.5 — первый стабильный релиз Susanin для проверенного reference profile.**
 
-На реальном ARM64 MikroTik с RouterOS 7.23.3 проверены:
+Основная подтверждённая среда:
+
+- ARM64 MikroTik;
+- RouterOS 7.23.3;
+- IPv4;
+- interface-list `LAN`;
+- route-based WireGuard/AmneziaWG egress.
+
+На reference router проверены:
 
 - credentialless bootstrap;
-- clean install `0/16 → 16/16`;
-- validation generated scripts;
-- transactional fresh install;
-- controller upgrade поверх работающего data plane;
-- stage/promote/rollback source update;
-- reboot после clean install;
-- fail-open при старте, пока VPN ещё не поднялся;
-- автоматический recovery после возвращения туннеля;
-- раздельное TCP/UDP обучение.
+- clean/fresh installation;
+- RouterOS generated source validation;
+- transactional installation;
+- TCP/UDP adaptive learning;
+- fail-open DIRECT;
+- tunnel recovery;
+- reboot recovery;
+- controller replacement при продолжающем работать data plane;
+- stage/promote/rollback;
+- persistent runtime config;
+- diagnostics/telemetry;
+- reduced conntrack scanning;
+- race-safe dev4 data plane;
+- multi-hour dev4 soak without new `no such item (4)`
+  in the observed post-promotion window.
 
-Не проверено достаточно широко:
+Stable относится к проверенному reference profile,
+а не ко всем существующим RouterOS environments.
 
-- разные модели MikroTik и объёмы flash/RAM;
-- RouterOS до/после 7.23.3;
-- большие/сложные multi-LAN схемы;
+Ограниченно проверены:
+
+- другие RouterOS versions;
+- другие CPU architectures;
+- сложные multi-LAN environments;
 - IPv6;
-- массовая работа с разными типами VPN;
-- долгосрочная статистика false positive/false negative на разных провайдерах.
+- другие VPN technologies;
+- долгосрочные false-positive/false-negative показатели
+  на большом числе провайдеров.
 
-Пожалуйста, создавайте issues с RouterOS version, архитектурой, `status`, релевантными логами и описанием сети. **Не прикладывайте show-sensitive export, backup, WireGuard keys и пароли.**
+Перед Bug Issue сначала выполните diagnostic capture:
+
+**[docs/LOGGING.md](docs/LOGGING.md)**
+
+Никогда не прикладывайте `show-sensitive` export,
+RouterOS backup, WireGuard/AmneziaWG private keys или passwords.
 
 ## Благодарности
 

@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.11.5 — stable
+
+First stable release for the validated ARM64 / RouterOS 7.23.3 reference profile.
+
+v0.11.5 combines the adaptive-routing foundation introduced in v0.11.3,
+the operational/diagnostic features introduced in v0.11.4,
+and the connection-tracking stability work from v0.11.5-dev4.
+
+Highlights:
+
+- consolidated FAST conntrack snapshot;
+- consolidated SOFT/DETECT conntrack snapshot;
+- consolidated JUDGE TEST+OK snapshot;
+- per-flow transient error isolation;
+- race-safe address-list mutations;
+- protected HEALTH cleanup and recovery;
+- reduced dynamic conntrack scanning;
+- existing FAST/SOFT/JUDGE thresholds preserved;
+- existing scheduler cadence preserved;
+- existing WATCH/TEST/OK/COOLDOWN state machine preserved;
+- stable release packaging;
+- expanded user documentation;
+- expanded logging/diagnostics documentation;
+- diagnostic capture required for technical Bug Issues.
+
+Operational features inherited from v0.11.4:
+
+- persistent `/data/susanin.conf`;
+- configurable RouterOS logging levels;
+- diagnostic NDJSON recorder;
+- bounded rotation;
+- `diag status/start/stop`;
+- `diag sample`;
+- `diag errors`;
+- RouterOS resource telemetry;
+- conntrack telemetry;
+- script-job telemetry.
+
+Public stable scope:
+
+- ARM64;
+- RouterOS 7.23.3 reference platform;
+- IPv4;
+- interface-list `LAN`;
+- route-based tunnel;
+- WireGuard/AmneziaWG is the most tested egress.
+
 ## v0.11.4-rc1 — release candidate
 
 Release candidate preparation after the v0.11.3 public pilot baseline.
