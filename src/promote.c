@@ -2,6 +2,7 @@
 #include "promote.h"
 #include "fingerprint.h"
 #include "renderer.h"
+#include "state_cleanup.h"
 #include "version.h"
 
 #include <stdio.h>
@@ -303,7 +304,7 @@ int promote_dry_run(ros_client_t *ros, const app_config_t *cfg) {
     int rc = verify_stage(ros, &desired);
     if (rc == 0) {
         printf("\nSafety gates: PASS\n");
-        printf("Would: snapshot production -> create rollback backups -> pause schedulers -> wait jobs idle -> update 4 sources -> verify -> resume.\n");
+        printf("Would: snapshot production -> create rollback backups -> pause schedulers -> wait jobs idle -> update 4 sources -> verify -> clear legacy IP-only state/marked connections -> resume.\n");
     } else {
         printf("\nSafety gates: BLOCKED\n");
     }
@@ -380,6 +381,55 @@ int promote_run(ros_client_t *ros, const app_config_t *cfg) {
                prod_names[i], desired.scripts[i].bytes, desired.scripts[i].fp);
     }
 
+    printf("Clearing legacy IP-only adaptive state before scheduler resume...\n");
+
+    susanin_cleanup_stats_t migration;
+
+    if (
+        susanin_cleanup_legacy_state(
+            ros,
+            &migration
+        ) < 0
+    ) {
+        printf(
+            "FAIL legacy-state migration cleanup; restoring previous production sources "
+            "and forcing adaptive fail-open.\n"
+        );
+
+        int rb =
+            restore_sources(
+                ros,
+                prod
+            );
+
+        int fail_open =
+            susanin_disable_adaptive_mangle(
+                ros
+            );
+
+        printf(
+            "Source rollback=%s adaptive-mangle-disable=%s\n",
+            rb == 0
+                ? "SUCCESS"
+                : "FAILED",
+            fail_open == 0
+                ? "SUCCESS"
+                : "FAILED"
+        );
+
+        printf(
+            "Managed schedulers remain PAUSED; manual inspection required.\n"
+        );
+
+        goto fail_pre;
+    }
+
+    printf(
+        "  CLEAN legacy=%u marked-connections=%u\n",
+        migration.legacy_entries,
+        migration.marked_connections
+    );
+
     restore_scheduler_states(ros, sched);
 
     printf("Cleaning stage objects after successful promotion...\n");
@@ -401,50 +451,208 @@ fail_pre:
 
 int rollback_run(ros_client_t *ros) {
     printf("=== SUSANIN ROLLBACK v%s ===\n", SUSANIN_VERSION);
+
     script_obj_t prod[MANAGED_COUNT];
     script_obj_t backup[MANAGED_COUNT];
     scheduler_obj_t sched[MANAGED_COUNT];
+
     memset(prod, 0, sizeof(prod));
     memset(backup, 0, sizeof(backup));
     memset(sched, 0, sizeof(sched));
 
     for (size_t i = 0; i < MANAGED_COUNT; ++i) {
-        if (script_lookup(ros, prod_names[i], &prod[i]) < 0 || !prod[i].found ||
-            script_lookup(ros, backup_names[i], &backup[i]) < 0 || !backup[i].found || backup[i].invalid ||
-            scheduler_lookup(ros, prod_names[i], &sched[i]) < 0 || !sched[i].found) {
-            printf("BLOCK rollback prerequisite missing for %s\n", prod_names[i]);
+        if (
+            script_lookup(
+                ros,
+                prod_names[i],
+                &prod[i]
+            ) < 0 ||
+            !prod[i].found ||
+            script_lookup(
+                ros,
+                backup_names[i],
+                &backup[i]
+            ) < 0 ||
+            !backup[i].found ||
+            backup[i].invalid ||
+            scheduler_lookup(
+                ros,
+                prod_names[i],
+                &sched[i]
+            ) < 0 ||
+            !sched[i].found
+        ) {
+            printf(
+                "BLOCK rollback prerequisite missing for %s\n",
+                prod_names[i]
+            );
+
             goto fail;
         }
     }
 
-    for (size_t i = 0; i < MANAGED_COUNT; ++i) {
-        if (set_scheduler_disabled(ros, sched[i].id, 1) < 0) goto fail_restore_sched;
-    }
-    if (wait_jobs_idle(ros) < 0) goto fail_restore_sched;
+    printf("Pausing managed schedulers...\n");
 
     for (size_t i = 0; i < MANAGED_COUNT; ++i) {
-        if (set_script_source(ros, prod[i].id, backup[i].source) < 0 ||
-            verify_source(ros, prod_names[i], backup[i].fp, backup[i].bytes) < 0) {
-            printf("FAIL rollback source restore for %s\n", prod_names[i]);
+        if (
+            set_scheduler_disabled(
+                ros,
+                sched[i].id,
+                1
+            ) < 0
+        ) {
             goto fail_restore_sched;
         }
-        printf("  RESTORE %-18s %zu/%s\n", prod_names[i], backup[i].bytes, backup[i].fp);
     }
 
-    restore_scheduler_states(ros, sched);
+    if (wait_jobs_idle(ros) < 0) {
+        printf(
+            "FAIL managed script jobs did not become idle; production sources/runtime unchanged.\n"
+        );
+
+        goto fail_restore_sched;
+    }
+
+    printf("Clearing dev2 adaptive runtime state...\n");
+
+    susanin_cleanup_stats_t cleanup;
+
+    if (
+        susanin_cleanup_dev2_runtime(
+            ros,
+            &cleanup
+        ) < 0
+    ) {
+        int fail_open =
+            susanin_disable_adaptive_mangle(
+                ros
+            );
+
+        printf(
+            "FAIL dev2 runtime cleanup; adaptive-mangle-disable=%s.\n",
+            fail_open == 0
+                ? "SUCCESS"
+                : "FAILED"
+        );
+
+        /*
+         * Sources are still restored best-effort, but scheduler state is
+         * intentionally NOT resumed after an incomplete runtime cleanup.
+         */
+        for (size_t i = 0; i < MANAGED_COUNT; ++i) {
+            if (
+                set_script_source(
+                    ros,
+                    prod[i].id,
+                    backup[i].source
+                ) == 0 &&
+                verify_source(
+                    ros,
+                    prod_names[i],
+                    backup[i].fp,
+                    backup[i].bytes
+                ) == 0
+            ) {
+                printf(
+                    "  RESTORE %-18s %zu/%s\n",
+                    prod_names[i],
+                    backup[i].bytes,
+                    backup[i].fp
+                );
+            } else {
+                printf(
+                    "  FAIL source restore for %s\n",
+                    prod_names[i]
+                );
+            }
+        }
+
+        printf(
+            "Rollback result: FAILED SAFE - schedulers remain PAUSED; manual inspection required.\n"
+        );
+
+        goto fail;
+    }
+
+    printf(
+        "  CLEAN legacy=%u port=%u lazy-rules=%u marked-connections=%u\n",
+        cleanup.legacy_entries,
+        cleanup.port_entries,
+        cleanup.lazy_rules,
+        cleanup.marked_connections
+    );
+
+    printf("Restoring production script backups...\n");
+
+    for (size_t i = 0; i < MANAGED_COUNT; ++i) {
+        if (
+            set_script_source(
+                ros,
+                prod[i].id,
+                backup[i].source
+            ) < 0 ||
+            verify_source(
+                ros,
+                prod_names[i],
+                backup[i].fp,
+                backup[i].bytes
+            ) < 0
+        ) {
+            int fail_open =
+                susanin_disable_adaptive_mangle(
+                    ros
+                );
+
+            printf(
+                "FAIL rollback source restore for %s; adaptive-mangle-disable=%s.\n",
+                prod_names[i],
+                fail_open == 0
+                    ? "SUCCESS"
+                    : "FAILED"
+            );
+
+            printf(
+                "Managed schedulers remain PAUSED; manual inspection required.\n"
+            );
+
+            goto fail;
+        }
+
+        printf(
+            "  RESTORE %-18s %zu/%s\n",
+            prod_names[i],
+            backup[i].bytes,
+            backup[i].fp
+        );
+    }
+
+    restore_scheduler_states(
+        ros,
+        sched
+    );
+
     printf("Rollback result: SUCCESS\n");
+    printf("Adaptive runtime state reset: YES\n");
+    printf("Scheduler states restored: YES\n");
+
     for (size_t i = 0; i < MANAGED_COUNT; ++i) {
         script_obj_free(&prod[i]);
         script_obj_free(&backup[i]);
     }
+
     return 0;
 
 fail_restore_sched:
-    restore_scheduler_states(ros, sched);
+    restore_scheduler_states(
+        ros,
+        sched
+    );
+
 fail:
     for (size_t i = 0; i < MANAGED_COUNT; ++i) {
         script_obj_free(&prod[i]);
         script_obj_free(&backup[i]);
     }
+
     return -1;
 }

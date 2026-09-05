@@ -2,6 +2,7 @@
 #include "install.h"
 #include "fingerprint.h"
 #include "renderer.h"
+#include "state_cleanup.h"
 #include "validate.h"
 #include "version.h"
 
@@ -385,6 +386,7 @@ int install_run(ros_client_t *ros, const app_config_t *cfg, int dry_run) {
         printf("  4 schedulers (created disabled, enabled last)\n");
         printf("  8 AUTO-AWG compatibility mangle rules\n");
         printf("  3 SUSANIN private-network safety bypass rules\n");
+        printf("  legacy/dev2 adaptive runtime residue cleared before data-plane start\n");
         if (
             cfg->target_mode ==
                 SUSANIN_TARGET_INTERFACE
@@ -563,6 +565,49 @@ int install_run(ros_client_t *ros, const app_config_t *cfg, int dry_run) {
         }
         printf("  [OK] %-18s interval=%s\n", scheduler_specs[i].name, scheduler_specs[i].interval);
     }
+
+    printf("Clearing legacy/dev2 adaptive runtime residue before data-plane start...\n");
+
+    susanin_cleanup_stats_t cleanup;
+
+    if (
+        susanin_cleanup_dev2_runtime(
+            ros,
+            &cleanup
+        ) < 0
+    ) {
+        int fail_open =
+            susanin_disable_adaptive_mangle(
+                ros
+            );
+
+        printf(
+            "FAIL adaptive runtime cleanup; fail-open AUTO-AWG disable=%s. "
+            "Rolling back fresh-install objects.\n",
+            fail_open == 0
+                ? "SUCCESS"
+                : "FAILED"
+        );
+
+        rollback_fresh(
+            ros,
+            created_nat
+        );
+
+        renderer_free(
+            &desired
+        );
+
+        return -1;
+    }
+
+    printf(
+        "  [OK] cleanup legacy=%u port=%u lazy-rules=%u marked-connections=%u\n",
+        cleanup.legacy_entries,
+        cleanup.port_entries,
+        cleanup.lazy_rules,
+        cleanup.marked_connections
+    );
 
     printf("Committing data-plane...\n");
     for (size_t i = 0; i < SAFETY_MANGLE; ++i) {
