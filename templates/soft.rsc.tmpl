@@ -20,6 +20,10 @@
   :local dst [:toip ($c->"dst-address")]
   :local port ($c->"dst-port")
   :local mark [:tostr ($c->"connection-mark")]
+  :local watchList ("auto_awg_watch_" . $proto . "_" . [:tostr $port])
+  :local testList ("auto_awg_test_" . $proto . "_" . [:tostr $port])
+  :local okList ("auto_awg_ok_" . $proto . "_" . [:tostr $port])
+  :local coolList ("auto_awg_cooldown_" . $proto . "_" . [:tostr $port])
   :local op ($c->"orig-packets")
   :local rp ($c->"repl-packets")
 
@@ -52,12 +56,20 @@
           :set suspicious true
         }
 
-        :if (($trigger = false) && ($suspicious = true)) do={
-          :local wid [/ip firewall address-list find where list="auto_awg_watch_tcp" and address=$dst]
+        :local directHit false
+
+        :if (($trigger = true) || ($suspicious = true)) do={
+          :if ([:len [/ip firewall address-list find where list="vpn_direct" and address=$dst]] > 0) do={
+            :set directHit true
+          }
+        }
+
+        :if (($directHit = false) && ($trigger = false) && ($suspicious = true)) do={
+          :local wid [/ip firewall address-list find where list=$watchList and address=$dst]
 
           :if ([:len $wid] = 0) do={
-            :if (([:len [/ip firewall address-list find where list="auto_awg_ok_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_tcp" and address=$dst]] = 0)) do={
-              /ip firewall address-list add list=auto_awg_watch_tcp address=$dst timeout=8s comment=("TCP-LATE-STALL " . [:tostr $port])
+            :if (([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0)) do={
+              /ip firewall address-list add list=$watchList address=$dst timeout=8s comment=("TCP-LATE-STALL " . [:tostr $port])
             }
           } else={
             :onerror err in={
@@ -70,12 +82,99 @@
           }
         }
 
-        :if ($trigger = true) do={
-          :if (([:len [/ip firewall address-list find where list="auto_awg_ok_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_tcp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_tcp" and address=$dst]] = 0)) do={
-            :onerror err in={ /ip firewall address-list remove [find where list="auto_awg_watch_tcp" and address=$dst] } do={}
-            /ip firewall address-list add list=auto_awg_test_tcp address=$dst timeout=1m comment=($reason . " " . [:tostr $port])
-            :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT " . $reason . " " . [:tostr $dst] . ":" . [:tostr $port]) }
-            :onerror err in={ /ip firewall connection remove $id } do={}
+        :if (($directHit = false) && ($trigger = true)) do={
+          :if (([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0)) do={
+            :local lazyReady true
+            :local routeAnchor [/ip firewall mangle find where comment="AUTO-AWG: L2 route confirmed"]
+            :local okRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " OK")
+            :local testRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " TEST")
+
+            :if ([:len $routeAnchor] != 1) do={
+              :set lazyReady false
+            }
+
+            :if ($lazyReady = true) do={
+              :local okRules [/ip firewall mangle find where comment=$okRuleComment]
+
+              :if ([:len $okRules] = 0) do={
+                :onerror lazyOkCreateError in={
+                  /ip firewall mangle add chain=prerouting action=mark-connection protocol=$proto dst-port=$port dst-address-list=$okList connection-mark=no-mark new-connection-mark=auto-awg-ok-conn connection-state=new dst-address-type=!local in-interface-list="{{LAN_LIST}}" passthrough=yes disabled=no comment=$okRuleComment place-before=$routeAnchor
+                } do={
+                  :set lazyReady false
+                }
+              }
+
+              :if ($lazyReady = true) do={
+                :set okRules [/ip firewall mangle find where comment=$okRuleComment]
+
+                :if ([:len $okRules] > 1) do={
+                  :local keepFirst true
+
+                  :foreach lazyRuleId in=$okRules do={
+                    :if ($keepFirst = true) do={
+                      :set keepFirst false
+                    } else={
+                      :onerror lazyDupRemoveError in={
+                        /ip firewall mangle remove $lazyRuleId
+                      } do={}
+                    }
+                  }
+
+                  :set okRules [/ip firewall mangle find where comment=$okRuleComment]
+                }
+
+                :if ([:len $okRules] != 1) do={
+                  :set lazyReady false
+                }
+              }
+            }
+
+            :if ($lazyReady = true) do={
+              :local testRules [/ip firewall mangle find where comment=$testRuleComment]
+
+              :if ([:len $testRules] = 0) do={
+                :onerror lazyTestCreateError in={
+                  /ip firewall mangle add chain=prerouting action=mark-connection protocol=$proto dst-port=$port dst-address-list=$testList connection-mark=no-mark new-connection-mark=auto-awg-test-conn connection-state=new dst-address-type=!local in-interface-list="{{LAN_LIST}}" passthrough=yes disabled=no comment=$testRuleComment place-before=$routeAnchor
+                } do={
+                  :set lazyReady false
+                }
+              }
+
+              :if ($lazyReady = true) do={
+                :set testRules [/ip firewall mangle find where comment=$testRuleComment]
+
+                :if ([:len $testRules] > 1) do={
+                  :local keepFirst true
+
+                  :foreach lazyRuleId in=$testRules do={
+                    :if ($keepFirst = true) do={
+                      :set keepFirst false
+                    } else={
+                      :onerror lazyDupRemoveError in={
+                        /ip firewall mangle remove $lazyRuleId
+                      } do={}
+                    }
+                  }
+
+                  :set testRules [/ip firewall mangle find where comment=$testRuleComment]
+                }
+
+                :if ([:len $testRules] != 1) do={
+                  :set lazyReady false
+                }
+              }
+            }
+
+            :if ($lazyReady = true) do={
+              :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
+              /ip firewall address-list add list=$testList address=$dst timeout=1m comment=($reason . " " . [:tostr $port])
+              :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT " . $reason . " " . [:tostr $dst] . ":" . [:tostr $port]) }
+              :onerror err in={ /ip firewall connection remove $id } do={}
+            } else={
+              :if ({{LOG_ERROR}}) do={
+                :log warning ("AUTO-AWG: lazy rules unavailable for " . $proto . ":" . [:tostr $port] . ", keeping DIRECT")
+              }
+            }
           }
         }
       }
@@ -95,11 +194,104 @@
 
       :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true)) do={
         :if (!(($dst in 0.0.0.0/8) || ($dst in 10.0.0.0/8) || ($dst in 100.64.0.0/10) || ($dst in 127.0.0.0/8) || ($dst in 169.254.0.0/16) || ($dst in 172.16.0.0/12) || ($dst in 192.168.0.0/16) || ($dst in 224.0.0.0/4) || ($dst in 240.0.0.0/4))) do={
-          :if (([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_udp" and address=$dst]] = 0)) do={
-            :onerror err in={ /ip firewall address-list remove [find where list="auto_awg_watch_udp" and address=$dst] } do={}
-            /ip firewall address-list add list=auto_awg_test_udp address=$dst timeout=1m comment=("UDP " . [:tostr $port])
-            :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT UDP " . [:tostr $dst] . ":" . [:tostr $port]) }
-            :onerror err in={ /ip firewall connection remove $id } do={}
+          :local directHit false
+
+          :if ([:len [/ip firewall address-list find where list="vpn_direct" and address=$dst]] > 0) do={
+            :set directHit true
+          }
+
+          :if (($directHit = false) && ([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0)) do={
+            :local lazyReady true
+            :local routeAnchor [/ip firewall mangle find where comment="AUTO-AWG: L2 route confirmed"]
+            :local okRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " OK")
+            :local testRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " TEST")
+
+            :if ([:len $routeAnchor] != 1) do={
+              :set lazyReady false
+            }
+
+            :if ($lazyReady = true) do={
+              :local okRules [/ip firewall mangle find where comment=$okRuleComment]
+
+              :if ([:len $okRules] = 0) do={
+                :onerror lazyOkCreateError in={
+                  /ip firewall mangle add chain=prerouting action=mark-connection protocol=$proto dst-port=$port dst-address-list=$okList connection-mark=no-mark new-connection-mark=auto-awg-ok-conn connection-state=new dst-address-type=!local in-interface-list="{{LAN_LIST}}" passthrough=yes disabled=no comment=$okRuleComment place-before=$routeAnchor
+                } do={
+                  :set lazyReady false
+                }
+              }
+
+              :if ($lazyReady = true) do={
+                :set okRules [/ip firewall mangle find where comment=$okRuleComment]
+
+                :if ([:len $okRules] > 1) do={
+                  :local keepFirst true
+
+                  :foreach lazyRuleId in=$okRules do={
+                    :if ($keepFirst = true) do={
+                      :set keepFirst false
+                    } else={
+                      :onerror lazyDupRemoveError in={
+                        /ip firewall mangle remove $lazyRuleId
+                      } do={}
+                    }
+                  }
+
+                  :set okRules [/ip firewall mangle find where comment=$okRuleComment]
+                }
+
+                :if ([:len $okRules] != 1) do={
+                  :set lazyReady false
+                }
+              }
+            }
+
+            :if ($lazyReady = true) do={
+              :local testRules [/ip firewall mangle find where comment=$testRuleComment]
+
+              :if ([:len $testRules] = 0) do={
+                :onerror lazyTestCreateError in={
+                  /ip firewall mangle add chain=prerouting action=mark-connection protocol=$proto dst-port=$port dst-address-list=$testList connection-mark=no-mark new-connection-mark=auto-awg-test-conn connection-state=new dst-address-type=!local in-interface-list="{{LAN_LIST}}" passthrough=yes disabled=no comment=$testRuleComment place-before=$routeAnchor
+                } do={
+                  :set lazyReady false
+                }
+              }
+
+              :if ($lazyReady = true) do={
+                :set testRules [/ip firewall mangle find where comment=$testRuleComment]
+
+                :if ([:len $testRules] > 1) do={
+                  :local keepFirst true
+
+                  :foreach lazyRuleId in=$testRules do={
+                    :if ($keepFirst = true) do={
+                      :set keepFirst false
+                    } else={
+                      :onerror lazyDupRemoveError in={
+                        /ip firewall mangle remove $lazyRuleId
+                      } do={}
+                    }
+                  }
+
+                  :set testRules [/ip firewall mangle find where comment=$testRuleComment]
+                }
+
+                :if ([:len $testRules] != 1) do={
+                  :set lazyReady false
+                }
+              }
+            }
+
+            :if ($lazyReady = true) do={
+              :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
+              /ip firewall address-list add list=$testList address=$dst timeout=1m comment=("UDP " . [:tostr $port])
+              :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT UDP " . [:tostr $dst] . ":" . [:tostr $port]) }
+              :onerror err in={ /ip firewall connection remove $id } do={}
+            } else={
+              :if ({{LOG_ERROR}}) do={
+                :log warning ("AUTO-AWG: lazy rules unavailable for " . $proto . ":" . [:tostr $port] . ", keeping DIRECT")
+              }
+            }
           }
         }
       }
@@ -119,25 +311,120 @@
 
       :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true) && ($op >= 8) && ($origActive = true) && ($replSilent = true)) do={
         :if (!(($dst in 0.0.0.0/8) || ($dst in 10.0.0.0/8) || ($dst in 100.64.0.0/10) || ($dst in 127.0.0.0/8) || ($dst in 169.254.0.0/16) || ($dst in 172.16.0.0/12) || ($dst in 192.168.0.0/16) || ($dst in 224.0.0.0/4) || ($dst in 240.0.0.0/4))) do={
-          :local wid [/ip firewall address-list find where list="auto_awg_watch_udp" and address=$dst]
+          :local directHit false
 
-          :if ([:len $wid] = 0) do={
-            :if (([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_udp" and address=$dst]] = 0)) do={
-              /ip firewall address-list add list=auto_awg_watch_udp address=$dst timeout=8s comment="QUIC-LATE-STALL 443"
-            }
-          } else={
-            :onerror err in={
-              :local left [/ip firewall address-list get $wid timeout]
+          :if ([:len [/ip firewall address-list find where list="vpn_direct" and address=$dst]] > 0) do={
+            :set directHit true
+          }
 
-              :if ($left <= 4s) do={
-                :if (([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_test_udp" and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list="auto_awg_cooldown_udp" and address=$dst]] = 0)) do={
-                  :onerror err in={ /ip firewall address-list remove [find where list="auto_awg_watch_udp" and address=$dst] } do={}
-                  /ip firewall address-list add list=auto_awg_test_udp address=$dst timeout=1m comment="QUIC-LATE-STALL 443"
-                  :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT QUIC-LATE-STALL " . [:tostr $dst] . ":443") }
-                  :onerror err in={ /ip firewall connection remove $id } do={}
-                }
+          :if ($directHit = false) do={
+            :local wid [/ip firewall address-list find where list=$watchList and address=$dst]
+
+            :if ([:len $wid] = 0) do={
+              :if (([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0)) do={
+                /ip firewall address-list add list=$watchList address=$dst timeout=8s comment="QUIC-LATE-STALL 443"
               }
-            } do={}
+            } else={
+              :onerror err in={
+                :local left [/ip firewall address-list get $wid timeout]
+
+                :if ($left <= 4s) do={
+                  :if (([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0)) do={
+                    :local lazyReady true
+                    :local routeAnchor [/ip firewall mangle find where comment="AUTO-AWG: L2 route confirmed"]
+                    :local okRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " OK")
+                    :local testRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " TEST")
+
+                    :if ([:len $routeAnchor] != 1) do={
+                      :set lazyReady false
+                    }
+
+                    :if ($lazyReady = true) do={
+                      :local okRules [/ip firewall mangle find where comment=$okRuleComment]
+
+                      :if ([:len $okRules] = 0) do={
+                        :onerror lazyOkCreateError in={
+                          /ip firewall mangle add chain=prerouting action=mark-connection protocol=$proto dst-port=$port dst-address-list=$okList connection-mark=no-mark new-connection-mark=auto-awg-ok-conn connection-state=new dst-address-type=!local in-interface-list="{{LAN_LIST}}" passthrough=yes disabled=no comment=$okRuleComment place-before=$routeAnchor
+                        } do={
+                          :set lazyReady false
+                        }
+                      }
+
+                      :if ($lazyReady = true) do={
+                        :set okRules [/ip firewall mangle find where comment=$okRuleComment]
+
+                        :if ([:len $okRules] > 1) do={
+                          :local keepFirst true
+
+                          :foreach lazyRuleId in=$okRules do={
+                            :if ($keepFirst = true) do={
+                              :set keepFirst false
+                            } else={
+                              :onerror lazyDupRemoveError in={
+                                /ip firewall mangle remove $lazyRuleId
+                              } do={}
+                            }
+                          }
+
+                          :set okRules [/ip firewall mangle find where comment=$okRuleComment]
+                        }
+
+                        :if ([:len $okRules] != 1) do={
+                          :set lazyReady false
+                        }
+                      }
+                    }
+
+                    :if ($lazyReady = true) do={
+                      :local testRules [/ip firewall mangle find where comment=$testRuleComment]
+
+                      :if ([:len $testRules] = 0) do={
+                        :onerror lazyTestCreateError in={
+                          /ip firewall mangle add chain=prerouting action=mark-connection protocol=$proto dst-port=$port dst-address-list=$testList connection-mark=no-mark new-connection-mark=auto-awg-test-conn connection-state=new dst-address-type=!local in-interface-list="{{LAN_LIST}}" passthrough=yes disabled=no comment=$testRuleComment place-before=$routeAnchor
+                        } do={
+                          :set lazyReady false
+                        }
+                      }
+
+                      :if ($lazyReady = true) do={
+                        :set testRules [/ip firewall mangle find where comment=$testRuleComment]
+
+                        :if ([:len $testRules] > 1) do={
+                          :local keepFirst true
+
+                          :foreach lazyRuleId in=$testRules do={
+                            :if ($keepFirst = true) do={
+                              :set keepFirst false
+                            } else={
+                              :onerror lazyDupRemoveError in={
+                                /ip firewall mangle remove $lazyRuleId
+                              } do={}
+                            }
+                          }
+
+                          :set testRules [/ip firewall mangle find where comment=$testRuleComment]
+                        }
+
+                        :if ([:len $testRules] != 1) do={
+                          :set lazyReady false
+                        }
+                      }
+                    }
+
+                    :if ($lazyReady = true) do={
+                      :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
+                      /ip firewall address-list add list=$testList address=$dst timeout=1m comment="QUIC-LATE-STALL 443"
+                      :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT QUIC-LATE-STALL " . [:tostr $dst] . ":443") }
+                      :onerror err in={ /ip firewall connection remove $id } do={}
+                    } else={
+                      :if ({{LOG_ERROR}}) do={
+                        :log warning ("AUTO-AWG: lazy rules unavailable for " . $proto . ":" . [:tostr $port] . ", keeping DIRECT")
+                      }
+                    }
+                  }
+                }
+              } do={}
+            }
           }
         }
       }
