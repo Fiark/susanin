@@ -2,6 +2,22 @@
 
 ## v0.12.0-dev1 — routing control-plane foundation
 
+### v0.12.0-dev1 acceptance
+
+RouterOS 7.23.3 ARM64 acceptance completed successfully.
+
+- table-native routing target accepted against an existing routing table;
+- VPN Direct IPv4/CIDR accepted;
+- VPN Direct domain and subdomain DNS FWD behavior accepted;
+- external DNS requests through RouterOS populate dynamic `vpn_direct`
+  IPv4 entries;
+- RouterOS internal `:resolve` does not populate that address-list;
+- repeated synchronization and full removal are clean and idempotent;
+- VPN Direct bypass precedes adaptive AUTO-AWG rules;
+- production v0.11.5 FAST/SOFT/JUDGE remained unchanged;
+- strict IPv4-only operation remains mandatory before production use.
+
+
 ### v0.12.0-dev1 table-native target follow-up
 
 - HEALTH now probes the selected RouterOS routing table directly instead of

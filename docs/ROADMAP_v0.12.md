@@ -102,6 +102,21 @@ routing-table-native HEALTH, table targets without mandatory single-egress
 resolution, interface/table first-run setup, strict RouterOS IPv4-only
 setup enforcement, and target-aware status/discovery.
 
+Acceptance completed on RouterOS 7.23.3 / ARM64.
+
+Validated:
+- table-native target and HEALTH;
+- VPN Direct IPv4/CIDR;
+- VPN Direct RouterOS DNS FWD domain/subdomain integration;
+- bypass priority before adaptive rules;
+- sync/repopulation/cleanup behavior;
+- production v0.11.5 remained unchanged.
+
+Domain VPN Direct requires DNS requests to be visible to RouterOS.
+RouterOS internal `:resolve` does not populate the DNS-backed address-list.
+Strict IPv4-only operation is mandatory because Susanin intentionally does
+not manage IPv6.
+
 0.12.0-dev2:
 port-scoped adaptive state and dynamic data-plane rules.
 
