@@ -1,4 +1,4 @@
-# Susanin v0.11.4-rc1 credentialless bootstrap
+# Susanin v0.11.5-dev4 credentialless bootstrap
 # Requires the architecture-matching container image uploaded as susanin.tar.
 # No username/password input and no environment list are required.
 # Controller network: 172.31.254.0/30 (RouterOS .1, Susanin .2).
@@ -81,13 +81,13 @@
         # versioned root-dir, otherwise the worker would mistake it for an old
         # container and continuously delete/re-add it.
         :local susaninBootstrapRoot [:tostr [/container get [find where name="susanin-controller"] root-dir]]
-        :if ($susaninBootstrapRoot = "/susanin-controller-v0114rc1") do={
+        :if ($susaninBootstrapRoot = "/susanin-controller-v0115dev4") do={
             :local susaninBootstrapArch [:tostr [/container get [find where name="susanin-controller"] arch]]
             :if ($susaninBootstrapArch = "") do={ :exit }
             :local susaninBootstrapTag [:tostr [/container get [find where name="susanin-controller"] tag]]
-            :if ($susaninBootstrapTag != "0.11.4-rc1") do={
+            :if ($susaninBootstrapTag != "0.11.5-dev4") do={
                 /system scheduler disable [find where name="susanin-bootstrap-worker"]
-                :log error ("SUSANIN: extracted image tag mismatch, expected 0.11.4-rc1 got " . $susaninBootstrapTag)
+                :log error ("SUSANIN: extracted image tag mismatch, expected 0.11.5-dev4 got " . $susaninBootstrapTag)
                 :exit
             }
 
@@ -155,7 +155,7 @@
     /container mounts add list=susanin-data src=susanin-data dst=/data
 
     :onerror susaninContainerAddError in={
-        /container add file=susanin.tar interface=veth-susanin root-dir=/susanin-controller-v0114rc1 mountlists=susanin-secret,susanin-data name=susanin-controller logging=yes start-on-boot=yes cmd=daemon
+        /container add file=susanin.tar interface=veth-susanin root-dir=/susanin-controller-v0115dev4 mountlists=susanin-secret,susanin-data name=susanin-controller logging=yes start-on-boot=yes cmd=daemon
     } do={
         :log error ("SUSANIN: container add failed: " . $susaninContainerAddError)
         :exit
