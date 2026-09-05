@@ -142,7 +142,17 @@ int validate_run(ros_client_t *ros, const app_config_t *cfg) {
     printf("=== SUSANIN VALIDATE v%s ===\n", SUSANIN_VERSION);
     printf("Mode: unique temporary RouterOS script objects; production data-plane is untouched\n");
     printf("LAN IPv4 networks: %u\n", desired.lan_networks);
-    printf("Egress: %s address=%s\n", cfg->egress_interface, desired.egress_address);
+    printf(
+        "Target: %s %s\n",
+        config_target_mode_name(cfg->target_mode),
+        cfg->target_value ? cfg->target_value : "<not selected>"
+    );
+    printf(
+        "Egress: %s%s%s\n",
+        cfg->egress_interface ? cfg->egress_interface : "<table-native>",
+        desired.egress_address[0] ? " address=" : "",
+        desired.egress_address[0] ? desired.egress_address : ""
+    );
     printf("Routing table: %s\n\n", cfg->routing_table);
 
     unsigned passed = 0;

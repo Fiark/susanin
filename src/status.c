@@ -99,9 +99,31 @@ int status_run(ros_client_t *ros, const app_config_t *cfg) {
 
     printf("=== SUSANIN STATUS ===\n");
 
+    printf(
+        "Target: %s %s\n",
+        config_target_mode_name(cfg->target_mode),
+        cfg->target_value
+            ? cfg->target_value
+            : "<not selected>"
+    );
+
+    printf(
+        "Routing table: %s\n",
+        cfg->routing_table
+            ? cfg->routing_table
+            : "<not selected>"
+    );
+
     if (cfg->egress_interface) {
         const char *ifs[] = {"/interface/print", "=.proplist=name,type,running,disabled"};
         if (ros_command(ros, ifs, 2, iface_cb, (void *)cfg) < 0) return -1;
+    } else if (
+        cfg->target_mode ==
+            SUSANIN_TARGET_ROUTING_TABLE
+    ) {
+        printf(
+            "Egress: <table-native / not required>\n"
+        );
     }
 
     printf("\nScripts:\n");

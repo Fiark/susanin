@@ -26,6 +26,11 @@ jobs:
           chmod +x tools/v012-control-plane-check.sh
           ./tools/v012-control-plane-check.sh
 
+      - name: v0.12 table-native target guard
+        run: |
+          chmod +x tools/v012-table-native-check.sh
+          ./tools/v012-table-native-check.sh
+
       - name: Secret hygiene scan
         run: |
           chmod +x tools/secret-scan.sh

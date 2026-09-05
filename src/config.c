@@ -567,8 +567,11 @@ int config_load_local(
      * The target abstraction is already persistent/user-facing.
      */
     cfg->selection_configured =
-        cfg->egress_interface &&
-        cfg->routing_table;
+        cfg->routing_table &&
+        (
+            cfg->target_mode == SUSANIN_TARGET_ROUTING_TABLE ||
+            cfg->egress_interface
+        );
 
     return 0;
 }
@@ -776,10 +779,18 @@ int config_save_target(
         !cfg ||
         !target_value ||
         !*target_value ||
-        !resolved_egress ||
-        !*resolved_egress ||
         !resolved_table ||
         !*resolved_table
+    ) {
+        return -1;
+    }
+
+    if (
+        mode == SUSANIN_TARGET_INTERFACE &&
+        (
+            !resolved_egress ||
+            !*resolved_egress
+        )
     ) {
         return -1;
     }
@@ -793,12 +804,19 @@ int config_save_target(
         target_value
     );
 
-    snprintf(
-        cfg->egress_buf,
-        sizeof(cfg->egress_buf),
-        "%s",
-        resolved_egress
-    );
+    cfg->egress_buf[0] = '\0';
+
+    if (
+        resolved_egress &&
+        *resolved_egress
+    ) {
+        snprintf(
+            cfg->egress_buf,
+            sizeof(cfg->egress_buf),
+            "%s",
+            resolved_egress
+        );
+    }
 
     snprintf(
         cfg->table_buf,
@@ -811,12 +829,19 @@ int config_save_target(
         cfg->target_value_buf;
 
     cfg->egress_interface =
-        cfg->egress_buf;
+        cfg->egress_buf[0]
+            ? cfg->egress_buf
+            : NULL;
 
     cfg->routing_table =
         cfg->table_buf;
 
-    cfg->selection_configured = 1;
+    cfg->selection_configured =
+        cfg->routing_table &&
+        (
+            cfg->target_mode == SUSANIN_TARGET_ROUTING_TABLE ||
+            cfg->egress_interface
+        );
 
     return write_nonsecret_config(cfg);
 }

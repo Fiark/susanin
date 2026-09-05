@@ -1112,25 +1112,18 @@ int target_set_routing_table(
     }
 
     /*
-     * dev1 deliberately resolves one interface from the selected table
-     * so the unchanged v0.11.5 health/NAT data plane remains compatible.
-     *
-     * Later 0.12 builds will remove this restriction and health-check
-     * the table itself.
+     * The egress interface is now informational only in table mode.
+     * A routing table may use recursive routes, ECMP or multiple interfaces.
+     * HEALTH and packet routing operate directly on the selected table.
      */
-    if (
-        !route_ctx.egress_found ||
-        route_ctx.ambiguous
-    ) {
-        fprintf(
-            stderr,
-            "Routing table '%s' cannot currently be mapped to one "
-            "unambiguous egress interface. dev1 refuses to change "
-            "the proven v0.11.5 data-plane contract.\n",
-            name
-        );
+    const char *resolved_egress = NULL;
 
-        return -1;
+    if (
+        route_ctx.egress_found &&
+        !route_ctx.ambiguous
+    ) {
+        resolved_egress =
+            route_ctx.egress;
     }
 
     if (
@@ -1138,7 +1131,7 @@ int target_set_routing_table(
             cfg,
             SUSANIN_TARGET_ROUTING_TABLE,
             name,
-            route_ctx.egress,
+            resolved_egress,
             name
         ) < 0
     ) {
@@ -1148,11 +1141,20 @@ int target_set_routing_table(
     printf(
         "Routing target saved:\n"
         "  mode      : routing-table\n"
-        "  table     : %s\n"
-        "  egress    : %s\n",
-        name,
-        route_ctx.egress
+        "  table     : %s\n",
+        name
     );
+
+    if (resolved_egress) {
+        printf(
+            "  egress    : %s (informational)\n",
+            resolved_egress
+        );
+    } else {
+        printf(
+            "  egress    : <table-native / not required>\n"
+        );
+    }
 
     return 0;
 }

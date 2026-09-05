@@ -128,12 +128,41 @@ int discovery_run(ros_client_t *ros, const app_config_t *cfg, int plan_mode) {
         printf("\n=== PLAN ===\n");
         printf("LAN source: interface-list=%s (%zu member%s)\n",
                cfg->lan_list, ctx.lan_if_count, ctx.lan_if_count == 1 ? "" : "s");
+        printf(
+            "Target: %s %s\n",
+            config_target_mode_name(cfg->target_mode),
+            cfg->target_value
+                ? cfg->target_value
+                : "<not selected>"
+        );
+
         if (cfg->egress_interface) {
-            printf("Egress interface: %s [%s%s]\n", cfg->egress_interface,
-                   ctx.egress_found ? "found" : "NOT FOUND",
-                   ctx.egress_found ? (ctx.egress_running ? ", running" : ", not running") : "");
+            printf(
+                "Resolved egress interface: %s [%s%s]\n",
+                cfg->egress_interface,
+                ctx.egress_found
+                    ? "found"
+                    : "NOT FOUND",
+                ctx.egress_found
+                    ? (
+                        ctx.egress_running
+                            ? ", running"
+                            : ", not running"
+                    )
+                    : ""
+            );
+        } else if (
+            cfg->target_mode ==
+                SUSANIN_TARGET_ROUTING_TABLE
+        ) {
+            printf(
+                "Resolved egress interface: "
+                "<table-native / not required>\n"
+            );
         } else {
-            printf("Egress interface: not selected yet\n");
+            printf(
+                "Resolved egress interface: not selected yet\n"
+            );
         }
         if (cfg->routing_table) {
             printf("Routing table: %s [%s]\n", cfg->routing_table,

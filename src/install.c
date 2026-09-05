@@ -343,8 +343,20 @@ static int enable_comment(ros_client_t *ros, const char *menu, const char *set_c
 }
 
 int install_run(ros_client_t *ros, const app_config_t *cfg, int dry_run) {
-    if (!ros || !cfg || !cfg->egress_interface || !cfg->routing_table || !cfg->lan_list) {
-        fprintf(stderr, "Susanin install: setup selection is incomplete.\n");
+    if (
+        !ros ||
+        !cfg ||
+        !cfg->routing_table ||
+        !cfg->lan_list ||
+        (
+            cfg->target_mode == SUSANIN_TARGET_INTERFACE &&
+            !cfg->egress_interface
+        )
+    ) {
+        fprintf(
+            stderr,
+            "Susanin install: setup selection is incomplete.\n"
+        );
         return -1;
     }
 
@@ -373,7 +385,20 @@ int install_run(ros_client_t *ros, const app_config_t *cfg, int dry_run) {
         printf("  4 schedulers (created disabled, enabled last)\n");
         printf("  8 AUTO-AWG compatibility mangle rules\n");
         printf("  3 SUSANIN private-network safety bypass rules\n");
-        printf("  tunnel masquerade only if no active masquerade exists for %s\n", cfg->egress_interface);
+        if (
+            cfg->target_mode ==
+                SUSANIN_TARGET_INTERFACE
+        ) {
+            printf(
+                "  tunnel masquerade only if no active masquerade exists for %s\n",
+                cfg->egress_interface
+            );
+        } else {
+            printf(
+                "  NAT: unmanaged by Susanin for routing-table target '%s'\n",
+                cfg->routing_table
+            );
+        }
         printf("Desired script fingerprints:\n");
         for (size_t i = 0; i < MANAGED_SCRIPTS; ++i)
             printf("  %-18s %zu/%s\n", desired.scripts[i].name, desired.scripts[i].bytes, desired.scripts[i].fp);
@@ -439,24 +464,95 @@ int install_run(ros_client_t *ros, const app_config_t *cfg, int dry_run) {
         }
     }
 
-    int existing_nat = has_existing_tunnel_nat(ros, cfg);
-    if (existing_nat < 0) {
-        rollback_fresh(ros, created_nat); renderer_free(&desired); return -1;
-    }
-    if (!existing_nat) {
-        if (add_tunnel_nat(ros, cfg) < 0) {
-            printf("FAIL tunnel NAT; rolling back fresh install.\n");
-            rollback_fresh(ros, created_nat); renderer_free(&desired); return -1;
+    if (
+        cfg->target_mode ==
+            SUSANIN_TARGET_INTERFACE
+    ) {
+        int existing_nat =
+            has_existing_tunnel_nat(
+                ros,
+                cfg
+            );
+
+        if (existing_nat < 0) {
+            rollback_fresh(
+                ros,
+                created_nat
+            );
+
+            renderer_free(
+                &desired
+            );
+
+            return -1;
         }
-        object_info_t o;
-        if (verify_comment_object(ros, "/ip/firewall/nat/print", "SUSANIN: masquerade selected tunnel", 1, &o) < 0) {
-            printf("FAIL tunnel NAT read-back; rolling back fresh install.\n");
-            rollback_fresh(ros, 1); renderer_free(&desired); return -1;
+
+        if (!existing_nat) {
+            if (
+                add_tunnel_nat(
+                    ros,
+                    cfg
+                ) < 0
+            ) {
+                printf(
+                    "FAIL tunnel NAT; rolling back fresh install.\n"
+                );
+
+                rollback_fresh(
+                    ros,
+                    created_nat
+                );
+
+                renderer_free(
+                    &desired
+                );
+
+                return -1;
+            }
+
+            object_info_t o;
+
+            if (
+                verify_comment_object(
+                    ros,
+                    "/ip/firewall/nat/print",
+                    "SUSANIN: masquerade selected tunnel",
+                    1,
+                    &o
+                ) < 0
+            ) {
+                printf(
+                    "FAIL tunnel NAT read-back; rolling back fresh install.\n"
+                );
+
+                rollback_fresh(
+                    ros,
+                    1
+                );
+
+                renderer_free(
+                    &desired
+                );
+
+                return -1;
+            }
+
+            created_nat = 1;
+
+            printf(
+                "  [OK] tunnel masquerade prepared\n"
+            );
+        } else {
+            printf(
+                "  [KEEP] existing active masquerade for %s\n",
+                cfg->egress_interface
+            );
         }
-        created_nat = 1;
-        printf("  [OK] tunnel masquerade prepared\n");
     } else {
-        printf("  [KEEP] existing active masquerade for %s\n", cfg->egress_interface);
+        printf(
+            "  [SKIP] NAT unmanaged for routing-table target '%s'\n",
+            cfg->routing_table
+        );
     }
 
     printf("Creating schedulers disabled...\n");
@@ -484,7 +580,21 @@ int install_run(ros_client_t *ros, const app_config_t *cfg, int dry_run) {
 
     printf("\nFresh install result: SUCCESS\n");
     printf("  scripts=4 schedulers=4 mangle=8 safety=3\n");
-    printf("  tunnel NAT=%s\n", created_nat ? "CREATED" : "EXISTING");
+    if (
+        cfg->target_mode ==
+            SUSANIN_TARGET_INTERFACE
+    ) {
+        printf(
+            "  tunnel NAT=%s\n",
+            created_nat
+                ? "CREATED"
+                : "EXISTING"
+        );
+    } else {
+        printf(
+            "  tunnel NAT=UNMANAGED (routing-table target)\n"
+        );
+    }
     printf("  data-plane started\n");
     renderer_free(&desired);
     return 0;

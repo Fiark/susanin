@@ -248,9 +248,21 @@ int apply_dry_run(ros_client_t *ros, const app_config_t *cfg) {
     memset(&ctx, 0, sizeof(ctx));
     ctx.cfg = cfg;
 
-    if (!cfg->egress_interface || !*cfg->egress_interface ||
-        !cfg->routing_table || !*cfg->routing_table) {
-        fprintf(stderr, "Susanin apply --dry-run requires SUSANIN_EGRESS_INTERFACE and SUSANIN_ROUTING_TABLE\n");
+    if (
+        !cfg->routing_table ||
+        !*cfg->routing_table ||
+        (
+            cfg->target_mode == SUSANIN_TARGET_INTERFACE &&
+            (
+                !cfg->egress_interface ||
+                !*cfg->egress_interface
+            )
+        )
+    ) {
+        fprintf(
+            stderr,
+            "Susanin apply --dry-run: routing target selection is incomplete.\n"
+        );
         return -1;
     }
 
@@ -270,11 +282,30 @@ int apply_dry_run(ros_client_t *ros, const app_config_t *cfg) {
            ctx.lan_members ? "OK" : "BLOCK", cfg->lan_list, ctx.lan_members);
     if (!ctx.lan_members) blockers++;
 
-    printf("  [%s] egress '%s'%s\n",
-           ctx.egress_found && ctx.egress_running ? "OK" : "BLOCK",
-           cfg->egress_interface,
-           !ctx.egress_found ? " not found" : (ctx.egress_running ? " running" : " not running/disabled"));
-    if (!(ctx.egress_found && ctx.egress_running)) blockers++;
+    if (cfg->target_mode == SUSANIN_TARGET_INTERFACE) {
+        printf(
+            "  [%s] egress '%s'%s\n",
+            ctx.egress_found && ctx.egress_running ? "OK" : "BLOCK",
+            cfg->egress_interface,
+            !ctx.egress_found
+                ? " not found"
+                : (
+                    ctx.egress_running
+                        ? " running"
+                        : " not running/disabled"
+                )
+        );
+
+        if (!(ctx.egress_found && ctx.egress_running)) {
+            blockers++;
+        }
+    } else {
+        printf(
+            "  [OK] target mode routing-table '%s' "
+            "(egress interface delegated to table)\n",
+            cfg->routing_table
+        );
+    }
 
     printf("  [%s] routing table '%s'%s\n",
            ctx.table_found ? "OK" : "BLOCK", cfg->routing_table,

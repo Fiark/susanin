@@ -2,6 +2,23 @@
 
 ## v0.12.0-dev1 — routing control-plane foundation
 
+### v0.12.0-dev1 table-native target follow-up
+
+- HEALTH now probes the selected RouterOS routing table directly instead of
+  requiring an IPv4 address on one selected tunnel interface;
+- routing-table targets may use recursive routing, ECMP, or multiple egress
+  interfaces without Susanin binding the data plane to one interface;
+- interface targets retain legacy automatic NAT management;
+- routing-table targets deliberately leave NAT ownership to the selected
+  external routing design;
+- first-run setup now lets the operator choose Interface or Routing table;
+- setup exposes usable non-LAN interfaces rather than only tunnel-looking names;
+- strict IPv4-only setup sets RouterOS `disable-ipv6=yes` and never reboots
+  automatically;
+- status and discovery report the selected target abstraction;
+- FAST, SOFT and JUDGE behavior remain unchanged from the v0.11.5 baseline.
+
+
 - keep the published v0.11.5 adaptive data-plane behavior as the baseline;
 - add persistent routing target metadata: interface or routing-table;
 - add `target show`, `target list`, and explicit target selection commands;

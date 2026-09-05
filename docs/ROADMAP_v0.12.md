@@ -97,6 +97,11 @@ lazily managed mangle rules, with garbage collection of unused port rules.
 configuration schema, routing target abstraction, IPv4-only enforcement,
 VPN Direct persistence and CLI.
 
+Implemented follow-up:
+routing-table-native HEALTH, table targets without mandatory single-egress
+resolution, interface/table first-run setup, strict RouterOS IPv4-only
+setup enforcement, and target-aware status/discovery.
+
 0.12.0-dev2:
 port-scoped adaptive state and dynamic data-plane rules.
 

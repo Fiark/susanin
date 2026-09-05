@@ -1,74 +1,136 @@
 :if ([/system script job print count-only as-value where script=[:jobname]] > 1) do={ :exit }
 :local healthRule [/ip firewall mangle find where comment="AUTO-AWG: L1 mark test"]
 :if ([:len $healthRule] = 0) do={ :exit }
-:local awgAddrId [/ip address find where interface="{{EGRESS_INTERFACE}}"]
-:if ([:len $awgAddrId] = 0) do={ :exit }
-:local awgCIDR [/ip address get $awgAddrId address]
-:local awgIP [:toip [:pick $awgCIDR 0 [:find $awgCIDR "/"]]]
-:local p1 [/ping address=1.1.1.1 interface="{{EGRESS_INTERFACE}}" src-address=$awgIP count=1]
-:local p2 [/ping address=8.8.8.8 interface="{{EGRESS_INTERFACE}}" src-address=$awgIP count=1]
+
+:local p1 0
+:local p2 0
+:local healthProbeOK true
+
+:onerror susaninHealthProbeError in={
+  :set p1 [/ping address=1.1.1.1 routing-table="{{ROUTING_TABLE}}" count=1]
+  :set p2 [/ping address=8.8.8.8 routing-table="{{ROUTING_TABLE}}" count=1]
+} do={
+  :set healthProbeOK false
+}
+
 :local total ($p1 + $p2)
 :local isDisabled [/ip firewall mangle get $healthRule disabled]
-:if ($total > 0) do={
+:local healthKey 1.1.1.1
+
+:if (($healthProbeOK = true) && ($total > 0)) do={
   :onerror err in={ /ip firewall address-list remove [find where list="auto_awg_health_fail"] } do={}
+
   :if ($isDisabled = true) do={
     /ip firewall mangle enable [find where comment~"^AUTO-AWG:"]
+
     :local recoveredTCP 0
     :local recoveredUDP 0
+
     :local susaninHealthTcpSnapshotOK true
     :local susaninHealthTcpConns
+
     :onerror susaninHealthTcpSnapshotError in={
       :set susaninHealthTcpConns [/ip firewall connection print as-value where protocol=tcp]
     } do={
       :set susaninHealthTcpSnapshotOK false
     }
+
     :if ($susaninHealthTcpSnapshotOK = true) do={
       :foreach c in=$susaninHealthTcpConns do={
-      :local id ($c->".id"); :local src [:toip ($c->"src-address")]; :local dst [:toip ($c->"dst-address")]
-      :local mark [:tostr ($c->"connection-mark")]
-      {{LAN_MATCH}}
-      :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true)) do={
-        :if ([:len [/ip firewall address-list find where list="auto_awg_ok_tcp" and address=$dst]] > 0) do={
-          :onerror err in={ /ip firewall connection remove $id; :set recoveredTCP ($recoveredTCP + 1) } do={}
+        :local id ($c->".id")
+        :local src [:toip ($c->"src-address")]
+        :local dst [:toip ($c->"dst-address")]
+        :local mark [:tostr ($c->"connection-mark")]
+
+        {{LAN_MATCH}}
+
+        :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true)) do={
+          :if ([:len [/ip firewall address-list find where list="auto_awg_ok_tcp" and address=$dst]] > 0) do={
+            :onerror err in={
+              /ip firewall connection remove $id
+              :set recoveredTCP ($recoveredTCP + 1)
+            } do={}
+          }
         }
       }
     }
-    }
+
     :local susaninHealthUdpSnapshotOK true
     :local susaninHealthUdpConns
+
     :onerror susaninHealthUdpSnapshotError in={
       :set susaninHealthUdpConns [/ip firewall connection print as-value where protocol=udp]
     } do={
       :set susaninHealthUdpSnapshotOK false
     }
+
     :if ($susaninHealthUdpSnapshotOK = true) do={
       :foreach c in=$susaninHealthUdpConns do={
-      :local id ($c->".id"); :local src [:toip ($c->"src-address")]; :local dst [:toip ($c->"dst-address")]
-      :local mark [:tostr ($c->"connection-mark")]
-      {{LAN_MATCH}}
-      :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true)) do={
-        :if ([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] > 0) do={
-          :onerror err in={ /ip firewall connection remove $id; :set recoveredUDP ($recoveredUDP + 1) } do={}
+        :local id ($c->".id")
+        :local src [:toip ($c->"src-address")]
+        :local dst [:toip ($c->"dst-address")]
+        :local mark [:tostr ($c->"connection-mark")]
+
+        {{LAN_MATCH}}
+
+        :if ((($mark = "") || ($mark = "no-mark")) && ($fromLAN = true)) do={
+          :if ([:len [/ip firewall address-list find where list="auto_awg_ok_udp" and address=$dst]] > 0) do={
+            :onerror err in={
+              /ip firewall connection remove $id
+              :set recoveredUDP ($recoveredUDP + 1)
+            } do={}
+          }
         }
       }
     }
+
+    :if ({{LOG_INFO}}) do={
+      :log info ("AUTO-AWG: target UP table={{ROUTING_TABLE}}, recovery TCP=" . [:tostr $recoveredTCP] . " UDP=" . [:tostr $recoveredUDP])
     }
-    :if ({{LOG_INFO}}) do={ :log info ("AUTO-AWG: tunnel UP, recovery TCP=" . [:tostr $recoveredTCP] . " UDP=" . [:tostr $recoveredUDP]) }
   }
+
   :exit
 }
+
 :if ($isDisabled = true) do={ :exit }
-:local failId [/ip firewall address-list find where list="auto_awg_health_fail" and address=$awgIP]
+
+:local failId [/ip firewall address-list find where list="auto_awg_health_fail" and address=$healthKey]
+
 :if ([:len $failId] = 0) do={
-  /ip firewall address-list add list=auto_awg_health_fail address=$awgIP timeout=8s comment="AWG health miss 1/2"
+  /ip firewall address-list add list=auto_awg_health_fail address=$healthKey timeout=8s comment="routing target health miss 1/2"
   :exit
 }
-:onerror err in={ /ip firewall address-list remove [find where list="auto_awg_health_fail"] } do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list="auto_awg_health_fail"]
+} do={}
+
 /ip firewall mangle disable [find where comment~"^AUTO-AWG:"]
-:onerror err in={ /ip firewall connection remove [find where connection-mark=auto-awg-test-conn] } do={}
-:onerror err in={ /ip firewall connection remove [find where connection-mark=auto-awg-ok-conn] } do={}
-:onerror err in={ /ip firewall address-list remove [find where list="auto_awg_watch_tcp"] } do={}
-:onerror err in={ /ip firewall address-list remove [find where list="auto_awg_test_tcp"] } do={}
-:onerror err in={ /ip firewall address-list remove [find where list="auto_awg_watch_udp"] } do={}
-:onerror err in={ /ip firewall address-list remove [find where list="auto_awg_test_udp"] } do={}
-:if ({{LOG_ERROR}}) do={ :log warning "AUTO-AWG: tunnel DOWN after 2 health misses, fallback to DIRECT" }
+
+:onerror err in={
+  /ip firewall connection remove [find where connection-mark=auto-awg-test-conn]
+} do={}
+
+:onerror err in={
+  /ip firewall connection remove [find where connection-mark=auto-awg-ok-conn]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list="auto_awg_watch_tcp"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list="auto_awg_test_tcp"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list="auto_awg_watch_udp"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list="auto_awg_test_udp"]
+} do={}
+
+:if ({{LOG_ERROR}}) do={
+  :log warning "AUTO-AWG: routing target DOWN after 2 health misses, fallback to DIRECT"
+}

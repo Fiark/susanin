@@ -218,7 +218,7 @@ static int render_one(const char *tmpl_name, const char *script_name,
 }
 
 int renderer_build(ros_client_t *ros, const app_config_t *cfg, susanin_render_bundle_t *out) {
-    if (!ros || !cfg || !out || !cfg->egress_interface || !cfg->routing_table) return -1;
+    if (!ros || !cfg || !out || !cfg->routing_table) return -1;
     memset(out, 0, sizeof(*out));
     render_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
@@ -242,12 +242,6 @@ int renderer_build(ros_client_t *ros, const app_config_t *cfg, susanin_render_bu
                 ctx.if_count, cfg->lan_list);
         return -1;
     }
-    if (!ctx.egress_address[0]) {
-        fprintf(stderr, "Susanin render: egress '%s' has no IPv4 address; the health template requires one\n",
-                cfg->egress_interface);
-        return -1;
-    }
-
     char *match = lan_match_snippet(&ctx);
     if (!match) return -1;
 
@@ -281,7 +275,17 @@ int renderer_run(ros_client_t *ros, const app_config_t *cfg) {
     printf("Mode: generated desired RouterOS data-plane; no changes\n");
     printf("LAN interface-list: %s\n", cfg->lan_list);
     printf("LAN IPv4 networks discovered: %u\n", b.lan_networks);
-    printf("Egress: %s address=%s\n", cfg->egress_interface, b.egress_address);
+    printf(
+        "Target: %s %s\n",
+        config_target_mode_name(cfg->target_mode),
+        cfg->target_value ? cfg->target_value : "<not selected>"
+    );
+    printf(
+        "Egress: %s%s%s\n",
+        cfg->egress_interface ? cfg->egress_interface : "<table-native>",
+        b.egress_address[0] ? " address=" : "",
+        b.egress_address[0] ? b.egress_address : ""
+    );
     printf("Routing table: %s\n\n", cfg->routing_table);
     printf("Desired script fingerprints:\n");
     for (size_t i = 0; i < SUSANIN_SCRIPT_COUNT; ++i) {
