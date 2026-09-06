@@ -191,6 +191,216 @@ The tested v0.12 migration path successfully:
 8. rolled back to exact v0.11.5 sources;
 9. left independent AWG infrastructure unchanged.
 
+## M2 — FAST -> MIDDLE -> rollback FAST
+
+Result:
+
+    PASS
+
+M2 was executed on the same RouterOS 7.23.3 ARM64 reference router and with
+the same DEV4 executable:
+
+    ca8f422bc005b2f5702c036ad18bf3758ea114b8
+
+The test began and ended with the exact stable v0.11.5 reference state.
+
+### Reference -> FAST setup
+
+DEV4 was configured for:
+
+    accuracy profile = fast
+    target mode      = routing-table
+    routing table    = r_to_awg
+
+Exact FAST stage and production source:
+
+    HEALTH  bytes=5774   fnv1a64=8abd7d7256f0be6a
+    FAST    bytes=26098  fnv1a64=0c9672d93a6a4e85
+    DETECT  bytes=41519  fnv1a64=0ee9c8e6708bc6e8
+    JUDGE   bytes=16840  fnv1a64=72733543f4561160
+
+Reference -> FAST promotion:
+
+    PASS
+
+The setup promotion also exercised cleanup against live stable runtime:
+
+    legacy IP-only entries         initial=3 -> remaining=0
+    adaptive connection marks      initial=3 -> remaining=0
+    connection-mark verify attempts=6
+
+### MIDDLE desired source
+
+DEV4 was switched to the MIDDLE accuracy profile.
+
+Exact MIDDLE staged source:
+
+    HEALTH  bytes=5776   fnv1a64=89b3925ff2660c57
+    FAST    bytes=26100  fnv1a64=a6df6efc895000b4
+    DETECT  bytes=41521  fnv1a64=c31920dc5302d7db
+    JUDGE   bytes=16842  fnv1a64=6654d7bbb164e505
+
+Stage verification passed before write-mode promotion.
+
+### FAST runtime fixture
+
+Eight controlled tuple-aware address-list entries were initially created:
+
+    auto_awg_watch_tcp_443
+    auto_awg_test_tcp_443
+    auto_awg_ok_tcp_443
+    auto_awg_cooldown_tcp_443
+    auto_awg_watch_udp_443
+    auto_awg_test_udp_443
+    auto_awg_ok_udp_443
+    auto_awg_cooldown_udp_443
+
+Initial fixture count:
+
+    8
+
+Two controlled lazy rules were created:
+
+    AUTO-AWG: P tcp 443 OK
+    AUTO-AWG: P tcp 443 TEST
+
+Initial lazy-rule count:
+
+    2
+
+Controlled conntrack evidence was also produced.
+
+Fixture rule counters:
+
+    TEST packets = 1
+    OK packets   = 2
+
+Visible controlled connection marks before migration:
+
+    TEST = 1
+    OK   = 1
+
+This proves that real tuple state, lazy mark rules and TEST/OK connection
+marks existed before FAST -> MIDDLE promotion.
+
+### FAST -> MIDDLE compatibility cleanup
+
+Promotion completed successfully.
+
+Observed cleanup:
+
+    dev2 lazy rules:
+        initial=2
+        remaining=0
+        verification attempts=1
+
+    dev2 port/profile lists:
+        initial=4
+        remaining=0
+        verification attempts=1
+
+    legacy IP-only lists:
+        initial=0
+        remaining=0
+
+    adaptive TEST/OK connection marks:
+        initial=3
+        remaining=0
+        verification attempts=2
+
+Eight tuple fixture entries were created initially. At the compatibility
+cleanup scan four matching tuple entries remained live; the remaining state
+had already changed/disappeared before the cleanup scan. The authoritative
+post-condition was complete namespace absence after migration.
+
+Post-promotion validation:
+
+    controlled fixture entries = 0
+    tuple-aware runtime         = 0
+    lazy rules                  = 0
+    adaptive TEST/OK marks      = 0
+    standard stage objects      = 0
+    managed schedulers enabled  = 4 / 4
+
+Exact MIDDLE production source:
+
+    5776 / 26100 / 41521 / 16842
+
+Four rollback backups were retained and contained the exact previous FAST
+source:
+
+    5774 / 26098 / 41519 / 16840
+
+### Product rollback MIDDLE -> FAST
+
+`SUSANIN ROLLBACK v0.12.0-dev4` completed successfully.
+
+Rollback runtime cleanup reached zero incompatible state.
+
+Exact restored FAST production:
+
+    HEALTH  5774
+    FAST    26098
+    DETECT  41519
+    JUDGE   16840
+
+Managed schedulers after rollback:
+
+    4 / 4 enabled
+
+Result:
+
+    PASS
+
+### Reference-router recovery
+
+After M2, the independent E2E safety copies were used to restore the exact
+stable v0.11.5 reference source:
+
+    HEALTH  4186
+    FAST    4041
+    DETECT  8075
+    JUDGE   6122
+
+Managed script jobs were confirmed idle before source restoration.
+
+Final reference-router gates:
+
+    production sources = 4186 / 4041 / 8075 / 6122
+    schedulers          = 4 / 4
+    fixed mangle        = 8 / 8
+    AWG                 = 1 / 1 / 1
+
+Runtime residue:
+
+    tuple-aware state = 0
+    lazy rules        = 0
+    DEV3 stage holds  = 0
+    rollback backups  = 0
+    E2E safety copies = 0
+
+Accepted DEV3 MIDDLE inert stage restored:
+
+    HEALTH  5776
+    FAST    26100
+    DETECT  41521
+    JUDGE   16842
+
+Temporary RouterOS M2 harness:
+
+    removed
+
+### M2 conclusion
+
+M2 is accepted.
+
+The test proves that a profile transition from FAST to MIDDLE does not reuse
+FAST tuple/runtime evidence as MIDDLE evidence. Promotion clears incompatible
+tuple-aware state, lazy rules and adaptive connection marks before managed
+scheduler state is restored.
+
+The product rollback path also restored the exact pre-promotion FAST source.
+
 Next migration acceptance case:
 
-    M2 — FAST -> MIDDLE
+    M3 — MIDDLE -> SLOW
