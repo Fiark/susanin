@@ -4,10 +4,8 @@
 :if ([:len $healthRule] = 0) do={ :exit }
 :if ([/ip firewall mangle get $healthRule disabled] = true) do={ :exit }
 
-# SLOW is intentionally not active until its dedicated dev3
-# state-machine implementation. Fail open to DIRECT rather than
-# silently providing FAST/MIDDLE confidence under the SLOW name.
-:if ($susaninAccuracyProfile = "slow") do={ :exit }
+# FAST, MIDDLE and SLOW share the accepted detector/JUDGE
+# thresholds. Accuracy profiles change evidence transitions only.
 
 :local susaninSnapshotOK true
 :local conns
@@ -31,6 +29,8 @@
   :local okList ("auto_awg_ok_" . $proto . "_" . [:tostr $port])
   :local coolList ("auto_awg_cooldown_" . $proto . "_" . [:tostr $port])
   :local direct1List ("auto_awg_direct1_" . $proto . "_" . [:tostr $port])
+  :local awg1List ("auto_awg_awg1_" . $proto . "_" . [:tostr $port])
+  :local recheckList ("auto_awg_recheck_" . $proto . "_" . [:tostr $port])
   :local op ($c->"orig-packets")
   :local rp ($c->"repl-packets")
 
@@ -93,8 +93,53 @@
           :if (([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0)) do={
             :local lazyReady true
             :local profileProceed true
+            :local slowRecheck false
 
-            :if ($susaninAccuracyProfile = "middle") do={
+            :if ($susaninAccuracyProfile = "slow") do={
+              :local slowRecheckIds [/ip firewall address-list find where list=$recheckList and address=$dst]
+              :local slowAwg1Ids [/ip firewall address-list find where list=$awg1List and address=$dst]
+
+              :if (([:len $slowRecheckIds] > 0) && ([:len $slowAwg1Ids] > 0)) do={
+                :set slowRecheck true
+              } else={
+                :if (([:len $slowRecheckIds] > 0) || ([:len $slowAwg1Ids] > 0)) do={
+                  :local staleEvidenceOK true
+
+                  :onerror slowStaleRecheckClearError in={
+                    /ip firewall address-list remove [find where list=$recheckList and address=$dst]
+                  } do={
+                    :set staleEvidenceOK false
+                  }
+
+                  :onerror slowStaleAwg1ClearError in={
+                    /ip firewall address-list remove [find where list=$awg1List and address=$dst]
+                  } do={
+                    :set staleEvidenceOK false
+                  }
+
+                  :onerror slowStaleDirect1ClearError in={
+                    /ip firewall address-list remove [find where list=$direct1List and address=$dst]
+                  } do={
+                    :set staleEvidenceOK false
+                  }
+
+                  :if (([:len [/ip firewall address-list find where list=$recheckList and address=$dst]] > 0) || ([:len [/ip firewall address-list find where list=$awg1List and address=$dst]] > 0)) do={
+                    :set staleEvidenceOK false
+                  }
+
+                  :if ($staleEvidenceOK = false) do={
+                    :set profileProceed false
+                    :set lazyReady false
+
+                    :if ({{LOG_ERROR}}) do={
+                      :log warning ("AUTO-AWG: SLOW stale evidence cleanup failed for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                    }
+                  }
+                }
+              }
+            }
+
+            :if (($susaninAccuracyProfile = "middle") || (($susaninAccuracyProfile = "slow") && ($slowRecheck = false) && ($profileProceed = true))) do={
               :local direct1Ids [/ip firewall address-list find where list=$direct1List and address=$dst]
               :local currentEvidenceComment ("DEV3 DIRECT1 " . [:tostr $id])
               :local sameEvidence false
@@ -130,14 +175,14 @@
                   :set lazyReady false
 
                   :if ({{LOG_DEBUG}}) do={
-                    :log warning ("AUTO-AWG: MIDDLE DIRECT evidence 1 " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                    :log warning ("AUTO-AWG: " . $susaninAccuracyProfile . " DIRECT evidence 1 " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
                   }
                 } else={
                   :set profileProceed false
                   :set lazyReady false
 
                   :if ({{LOG_ERROR}}) do={
-                    :log warning ("AUTO-AWG: MIDDLE DIRECT evidence state unavailable for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                    :log warning ("AUTO-AWG: " . $susaninAccuracyProfile . " DIRECT evidence state unavailable for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
                   }
                 }
               } else={
@@ -232,8 +277,48 @@
             }
 
             :if ($lazyReady = true) do={
-              :if ($susaninAccuracyProfile = "middle") do={
-                :onerror direct1ClearError in={ /ip firewall address-list remove [find where list=$direct1List and address=$dst] } do={}
+              :if (($susaninAccuracyProfile = "middle") || ($susaninAccuracyProfile = "slow")) do={
+                :local profileStateOK true
+
+                :onerror direct1ClearError in={
+                  /ip firewall address-list remove [find where list=$direct1List and address=$dst]
+                } do={
+                  :set profileStateOK false
+                }
+
+                :if ([:len [/ip firewall address-list find where list=$direct1List and address=$dst]] > 0) do={
+                  :set profileStateOK false
+                }
+
+                :if (($susaninAccuracyProfile = "slow") && ($slowRecheck = true)) do={
+                  :onerror slowRecheckClearError in={
+                    /ip firewall address-list remove [find where list=$recheckList and address=$dst]
+                  } do={
+                    :set profileStateOK false
+                  }
+
+                  :if ([:len [/ip firewall address-list find where list=$recheckList and address=$dst]] > 0) do={
+                    :set profileStateOK false
+                  }
+
+                  :if ([:len [/ip firewall address-list find where list=$awg1List and address=$dst]] = 0) do={
+                    :set profileStateOK false
+                  }
+
+                  :if (($profileStateOK = true) && ({{LOG_DEBUG}})) do={
+                    :log warning ("AUTO-AWG: SLOW DIRECT re-check failed again " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                  }
+                }
+
+                :if (($susaninAccuracyProfile = "slow") && ($slowRecheck = false)) do={
+                  :if (([:len [/ip firewall address-list find where list=$awg1List and address=$dst]] > 0) || ([:len [/ip firewall address-list find where list=$recheckList and address=$dst]] > 0)) do={
+                    :set profileStateOK false
+                  }
+                }
+
+                :if ($profileStateOK = false) do={
+                  :error "DEV3 profile transition evidence cleanup failed"
+                }
               }
               :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
               /ip firewall address-list add list=$testList address=$dst timeout=1m comment=($reason . " " . [:tostr $port])
@@ -272,8 +357,53 @@
           :if (($directHit = false) && ([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0)) do={
             :local lazyReady true
             :local profileProceed true
+            :local slowRecheck false
 
-            :if ($susaninAccuracyProfile = "middle") do={
+            :if ($susaninAccuracyProfile = "slow") do={
+              :local slowRecheckIds [/ip firewall address-list find where list=$recheckList and address=$dst]
+              :local slowAwg1Ids [/ip firewall address-list find where list=$awg1List and address=$dst]
+
+              :if (([:len $slowRecheckIds] > 0) && ([:len $slowAwg1Ids] > 0)) do={
+                :set slowRecheck true
+              } else={
+                :if (([:len $slowRecheckIds] > 0) || ([:len $slowAwg1Ids] > 0)) do={
+                  :local staleEvidenceOK true
+
+                  :onerror slowStaleRecheckClearError in={
+                    /ip firewall address-list remove [find where list=$recheckList and address=$dst]
+                  } do={
+                    :set staleEvidenceOK false
+                  }
+
+                  :onerror slowStaleAwg1ClearError in={
+                    /ip firewall address-list remove [find where list=$awg1List and address=$dst]
+                  } do={
+                    :set staleEvidenceOK false
+                  }
+
+                  :onerror slowStaleDirect1ClearError in={
+                    /ip firewall address-list remove [find where list=$direct1List and address=$dst]
+                  } do={
+                    :set staleEvidenceOK false
+                  }
+
+                  :if (([:len [/ip firewall address-list find where list=$recheckList and address=$dst]] > 0) || ([:len [/ip firewall address-list find where list=$awg1List and address=$dst]] > 0)) do={
+                    :set staleEvidenceOK false
+                  }
+
+                  :if ($staleEvidenceOK = false) do={
+                    :set profileProceed false
+                    :set lazyReady false
+
+                    :if ({{LOG_ERROR}}) do={
+                      :log warning ("AUTO-AWG: SLOW stale evidence cleanup failed for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                    }
+                  }
+                }
+              }
+            }
+
+            :if (($susaninAccuracyProfile = "middle") || (($susaninAccuracyProfile = "slow") && ($slowRecheck = false) && ($profileProceed = true))) do={
               :local direct1Ids [/ip firewall address-list find where list=$direct1List and address=$dst]
               :local currentEvidenceComment ("DEV3 DIRECT1 " . [:tostr $id])
               :local sameEvidence false
@@ -309,14 +439,14 @@
                   :set lazyReady false
 
                   :if ({{LOG_DEBUG}}) do={
-                    :log warning ("AUTO-AWG: MIDDLE DIRECT evidence 1 " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                    :log warning ("AUTO-AWG: " . $susaninAccuracyProfile . " DIRECT evidence 1 " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
                   }
                 } else={
                   :set profileProceed false
                   :set lazyReady false
 
                   :if ({{LOG_ERROR}}) do={
-                    :log warning ("AUTO-AWG: MIDDLE DIRECT evidence state unavailable for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                    :log warning ("AUTO-AWG: " . $susaninAccuracyProfile . " DIRECT evidence state unavailable for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
                   }
                 }
               } else={
@@ -411,8 +541,48 @@
             }
 
             :if ($lazyReady = true) do={
-              :if ($susaninAccuracyProfile = "middle") do={
-                :onerror direct1ClearError in={ /ip firewall address-list remove [find where list=$direct1List and address=$dst] } do={}
+              :if (($susaninAccuracyProfile = "middle") || ($susaninAccuracyProfile = "slow")) do={
+                :local profileStateOK true
+
+                :onerror direct1ClearError in={
+                  /ip firewall address-list remove [find where list=$direct1List and address=$dst]
+                } do={
+                  :set profileStateOK false
+                }
+
+                :if ([:len [/ip firewall address-list find where list=$direct1List and address=$dst]] > 0) do={
+                  :set profileStateOK false
+                }
+
+                :if (($susaninAccuracyProfile = "slow") && ($slowRecheck = true)) do={
+                  :onerror slowRecheckClearError in={
+                    /ip firewall address-list remove [find where list=$recheckList and address=$dst]
+                  } do={
+                    :set profileStateOK false
+                  }
+
+                  :if ([:len [/ip firewall address-list find where list=$recheckList and address=$dst]] > 0) do={
+                    :set profileStateOK false
+                  }
+
+                  :if ([:len [/ip firewall address-list find where list=$awg1List and address=$dst]] = 0) do={
+                    :set profileStateOK false
+                  }
+
+                  :if (($profileStateOK = true) && ({{LOG_DEBUG}})) do={
+                    :log warning ("AUTO-AWG: SLOW DIRECT re-check failed again " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                  }
+                }
+
+                :if (($susaninAccuracyProfile = "slow") && ($slowRecheck = false)) do={
+                  :if (([:len [/ip firewall address-list find where list=$awg1List and address=$dst]] > 0) || ([:len [/ip firewall address-list find where list=$recheckList and address=$dst]] > 0)) do={
+                    :set profileStateOK false
+                  }
+                }
+
+                :if ($profileStateOK = false) do={
+                  :error "DEV3 profile transition evidence cleanup failed"
+                }
               }
               :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
               /ip firewall address-list add list=$testList address=$dst timeout=1m comment=("UDP " . [:tostr $port])
@@ -463,8 +633,53 @@
                   :if (([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0)) do={
                     :local lazyReady true
                     :local profileProceed true
+                    :local slowRecheck false
 
-                    :if ($susaninAccuracyProfile = "middle") do={
+                    :if ($susaninAccuracyProfile = "slow") do={
+                      :local slowRecheckIds [/ip firewall address-list find where list=$recheckList and address=$dst]
+                      :local slowAwg1Ids [/ip firewall address-list find where list=$awg1List and address=$dst]
+
+                      :if (([:len $slowRecheckIds] > 0) && ([:len $slowAwg1Ids] > 0)) do={
+                        :set slowRecheck true
+                      } else={
+                        :if (([:len $slowRecheckIds] > 0) || ([:len $slowAwg1Ids] > 0)) do={
+                          :local staleEvidenceOK true
+
+                          :onerror slowStaleRecheckClearError in={
+                            /ip firewall address-list remove [find where list=$recheckList and address=$dst]
+                          } do={
+                            :set staleEvidenceOK false
+                          }
+
+                          :onerror slowStaleAwg1ClearError in={
+                            /ip firewall address-list remove [find where list=$awg1List and address=$dst]
+                          } do={
+                            :set staleEvidenceOK false
+                          }
+
+                          :onerror slowStaleDirect1ClearError in={
+                            /ip firewall address-list remove [find where list=$direct1List and address=$dst]
+                          } do={
+                            :set staleEvidenceOK false
+                          }
+
+                          :if (([:len [/ip firewall address-list find where list=$recheckList and address=$dst]] > 0) || ([:len [/ip firewall address-list find where list=$awg1List and address=$dst]] > 0)) do={
+                            :set staleEvidenceOK false
+                          }
+
+                          :if ($staleEvidenceOK = false) do={
+                            :set profileProceed false
+                            :set lazyReady false
+
+                            :if ({{LOG_ERROR}}) do={
+                              :log warning ("AUTO-AWG: SLOW stale evidence cleanup failed for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                            }
+                          }
+                        }
+                      }
+                    }
+
+                    :if (($susaninAccuracyProfile = "middle") || (($susaninAccuracyProfile = "slow") && ($slowRecheck = false) && ($profileProceed = true))) do={
                       :local direct1Ids [/ip firewall address-list find where list=$direct1List and address=$dst]
                       :local currentEvidenceComment ("DEV3 DIRECT1 " . [:tostr $id])
                       :local sameEvidence false
@@ -500,14 +715,14 @@
                           :set lazyReady false
 
                           :if ({{LOG_DEBUG}}) do={
-                            :log warning ("AUTO-AWG: MIDDLE DIRECT evidence 1 " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                            :log warning ("AUTO-AWG: " . $susaninAccuracyProfile . " DIRECT evidence 1 " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
                           }
                         } else={
                           :set profileProceed false
                           :set lazyReady false
 
                           :if ({{LOG_ERROR}}) do={
-                            :log warning ("AUTO-AWG: MIDDLE DIRECT evidence state unavailable for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                            :log warning ("AUTO-AWG: " . $susaninAccuracyProfile . " DIRECT evidence state unavailable for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
                           }
                         }
                       } else={
@@ -602,8 +817,48 @@
                     }
 
                     :if ($lazyReady = true) do={
-                      :if ($susaninAccuracyProfile = "middle") do={
-                        :onerror direct1ClearError in={ /ip firewall address-list remove [find where list=$direct1List and address=$dst] } do={}
+                      :if (($susaninAccuracyProfile = "middle") || ($susaninAccuracyProfile = "slow")) do={
+                        :local profileStateOK true
+
+                        :onerror direct1ClearError in={
+                          /ip firewall address-list remove [find where list=$direct1List and address=$dst]
+                        } do={
+                          :set profileStateOK false
+                        }
+
+                        :if ([:len [/ip firewall address-list find where list=$direct1List and address=$dst]] > 0) do={
+                          :set profileStateOK false
+                        }
+
+                        :if (($susaninAccuracyProfile = "slow") && ($slowRecheck = true)) do={
+                          :onerror slowRecheckClearError in={
+                            /ip firewall address-list remove [find where list=$recheckList and address=$dst]
+                          } do={
+                            :set profileStateOK false
+                          }
+
+                          :if ([:len [/ip firewall address-list find where list=$recheckList and address=$dst]] > 0) do={
+                            :set profileStateOK false
+                          }
+
+                          :if ([:len [/ip firewall address-list find where list=$awg1List and address=$dst]] = 0) do={
+                            :set profileStateOK false
+                          }
+
+                          :if (($profileStateOK = true) && ({{LOG_DEBUG}})) do={
+                            :log warning ("AUTO-AWG: SLOW DIRECT re-check failed again " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                          }
+                        }
+
+                        :if (($susaninAccuracyProfile = "slow") && ($slowRecheck = false)) do={
+                          :if (([:len [/ip firewall address-list find where list=$awg1List and address=$dst]] > 0) || ([:len [/ip firewall address-list find where list=$recheckList and address=$dst]] > 0)) do={
+                            :set profileStateOK false
+                          }
+                        }
+
+                        :if ($profileStateOK = false) do={
+                          :error "DEV3 profile transition evidence cleanup failed"
+                        }
                       }
                       :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
                       /ip firewall address-list add list=$testList address=$dst timeout=1m comment="QUIC-LATE-STALL 443"

@@ -4,10 +4,8 @@
 :if ([:len $healthRule] = 0) do={ :exit }
 :if ([/ip firewall mangle get $healthRule disabled] = true) do={ :exit }
 
-# SLOW is intentionally not active until its dedicated dev3
-# state-machine implementation. Fail open to DIRECT rather than
-# silently providing FAST/MIDDLE confidence under the SLOW name.
-:if ($susaninAccuracyProfile = "slow") do={ :exit }
+# FAST, MIDDLE and SLOW share the accepted detector/JUDGE
+# thresholds. Accuracy profiles change evidence transitions only.
 
 # RouterOS 7.23.3 can successfully filter the live connection table by
 # dynamic connection-mark while returning connection-mark as an empty value
@@ -117,7 +115,7 @@
       :if ($good = true) do={
         :local confirmOK true
 
-        :if ($susaninAccuracyProfile = "middle") do={
+        :if (($susaninAccuracyProfile = "middle") || ($susaninAccuracyProfile = "slow")) do={
           :set confirmOK false
 
           :local awg1Ids [/ip firewall address-list find where list=$awg1List and address=$dst]
@@ -137,35 +135,156 @@
             }
           }
 
-          :if ([:len $awg1Ids] = 0) do={
-            :local evidenceAdded true
+          :if ($susaninAccuracyProfile = "middle") do={
+            :if ([:len $awg1Ids] = 0) do={
+              :local evidenceAdded true
 
-            :onerror awg1AddError in={
-              /ip firewall address-list add list=$awg1List address=$dst timeout=2m comment=$currentEvidenceComment
-            } do={
-              :set evidenceAdded false
-            }
+              :onerror awg1AddError in={
+                /ip firewall address-list add list=$awg1List address=$dst timeout=2m comment=$currentEvidenceComment
+              } do={
+                :set evidenceAdded false
+              }
 
-            :if ($evidenceAdded = true) do={
-              :onerror awg1ConnRemoveError in={
-                /ip firewall connection remove $id
-              } do={}
+              :if ($evidenceAdded = true) do={
+                :onerror awg1ConnRemoveError in={
+                  /ip firewall connection remove $id
+                } do={}
 
-              :if ({{LOG_DEBUG}}) do={
-                :log warning ("AUTO-AWG: MIDDLE AWG evidence 1 " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                :if ({{LOG_DEBUG}}) do={
+                  :log warning ("AUTO-AWG: MIDDLE AWG evidence 1 " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                }
+              } else={
+                :if ({{LOG_ERROR}}) do={
+                  :log warning ("AUTO-AWG: MIDDLE AWG evidence state unavailable for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                }
               }
             } else={
-              :if ({{LOG_ERROR}}) do={
-                :log warning ("AUTO-AWG: MIDDLE AWG evidence state unavailable for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+              :if (($evidenceReadable = false) || ($sameEvidence = true)) do={
+                :onerror awg1RepeatRemoveError in={
+                  /ip firewall connection remove $id
+                } do={}
+              } else={
+                :set confirmOK true
               }
             }
-          } else={
-            :if (($evidenceReadable = false) || ($sameEvidence = true)) do={
-              :onerror awg1RepeatRemoveError in={
-                /ip firewall connection remove $id
-              } do={}
+          }
+
+          :if ($susaninAccuracyProfile = "slow") do={
+            :local recheckIds [/ip firewall address-list find where list=$recheckList and address=$dst]
+
+            :if ([:len $awg1Ids] = 0) do={
+              :local slowStateReady true
+
+              :onerror slowOldRecheckClearError in={
+                /ip firewall address-list remove [find where list=$recheckList and address=$dst]
+              } do={
+                :set slowStateReady false
+              }
+
+              :if ($slowStateReady = true) do={
+                :onerror slowAwg1AddError in={
+                  /ip firewall address-list add list=$awg1List address=$dst timeout=2m comment=$currentEvidenceComment
+                } do={
+                  :set slowStateReady false
+                }
+              }
+
+              :if ($slowStateReady = true) do={
+                :onerror slowRecheckAddError in={
+                  /ip firewall address-list add list=$recheckList address=$dst timeout=2m comment=("DEV3 RECHECK " . [:tostr $id])
+                } do={
+                  :set slowStateReady false
+                }
+              }
+
+              :if ($slowStateReady = true) do={
+                :local awg1Now [/ip firewall address-list find where list=$awg1List and address=$dst]
+                :local recheckNow [/ip firewall address-list find where list=$recheckList and address=$dst]
+
+                :if (([:len $awg1Now] != 1) || ([:len $recheckNow] != 1)) do={
+                  :set slowStateReady false
+                }
+              }
+
+              :if ($slowStateReady = true) do={
+                :onerror slowTestClearError in={
+                  /ip firewall address-list remove [find where list=$testList and address=$dst]
+                } do={
+                  :set slowStateReady false
+                }
+
+                :if ([:len [/ip firewall address-list find where list=$testList and address=$dst]] > 0) do={
+                  :set slowStateReady false
+                }
+              }
+
+              :if ($slowStateReady = true) do={
+                :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
+                :onerror err in={ /ip firewall address-list remove [find where list=$coolList and address=$dst] } do={}
+                :onerror err in={ /ip firewall address-list remove [find where list=$direct1List and address=$dst] } do={}
+
+                :onerror slowFirstAwgConnRemoveError in={
+                  /ip firewall connection remove $id
+                } do={}
+
+                :if ({{LOG_DEBUG}}) do={
+                  :log warning ("AUTO-AWG: SLOW AWG evidence 1; returning to DIRECT re-check " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                }
+              } else={
+                :onerror err in={ /ip firewall address-list remove [find where list=$awg1List and address=$dst] } do={}
+                :onerror err in={ /ip firewall address-list remove [find where list=$recheckList and address=$dst] } do={}
+                :onerror err in={ /ip firewall address-list remove [find where list=$direct1List and address=$dst] } do={}
+                :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
+                :onerror err in={ /ip firewall address-list remove [find where list=$testList and address=$dst] } do={}
+
+                :if ([:len [/ip firewall address-list find where list=$testList and address=$dst]] > 0) do={
+                  :local slowTestRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " TEST")
+
+                  :onerror slowTestRuleRemoveError in={
+                    /ip firewall mangle remove [find where comment=$slowTestRuleComment]
+                  } do={}
+                }
+
+                :onerror slowFailedStateConnRemoveError in={
+                  /ip firewall connection remove $id
+                } do={}
+
+                :if ({{LOG_ERROR}}) do={
+                  :log warning ("AUTO-AWG: SLOW re-check state creation failed; keeping DIRECT for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                }
+              }
             } else={
-              :set confirmOK true
+              :if (([:len $awg1Ids] != 1) || ([:len $recheckIds] > 0)) do={
+                :onerror err in={ /ip firewall address-list remove [find where list=$testList and address=$dst] } do={}
+                :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
+                :onerror err in={ /ip firewall address-list remove [find where list=$direct1List and address=$dst] } do={}
+                :onerror err in={ /ip firewall address-list remove [find where list=$awg1List and address=$dst] } do={}
+                :onerror err in={ /ip firewall address-list remove [find where list=$recheckList and address=$dst] } do={}
+
+                :if ([:len [/ip firewall address-list find where list=$testList and address=$dst]] > 0) do={
+                  :local slowTestRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " TEST")
+
+                  :onerror slowTestRuleRemoveError in={
+                    /ip firewall mangle remove [find where comment=$slowTestRuleComment]
+                  } do={}
+                }
+
+                :onerror slowInconsistentConnRemoveError in={
+                  /ip firewall connection remove $id
+                } do={}
+
+                :if ({{LOG_ERROR}}) do={
+                  :log warning ("AUTO-AWG: SLOW inconsistent AWG/re-check state reset to DIRECT for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                }
+              } else={
+                :if (($evidenceReadable = false) || ($sameEvidence = true)) do={
+                  :onerror slowAwgRepeatRemoveError in={
+                    /ip firewall connection remove $id
+                  } do={}
+                } else={
+                  :set confirmOK true
+                }
+              }
             }
           }
         }
