@@ -137,10 +137,16 @@ static int match_dev2_port_list(
         "auto_awg_test_tcp_",
         "auto_awg_ok_tcp_",
         "auto_awg_cooldown_tcp_",
+        "auto_awg_direct1_tcp_",
+        "auto_awg_awg1_tcp_",
+        "auto_awg_recheck_tcp_",
         "auto_awg_watch_udp_",
         "auto_awg_test_udp_",
         "auto_awg_ok_udp_",
-        "auto_awg_cooldown_udp_"
+        "auto_awg_cooldown_udp_",
+        "auto_awg_direct1_udp_",
+        "auto_awg_awg1_udp_",
+        "auto_awg_recheck_udp_"
     };
 
     for (

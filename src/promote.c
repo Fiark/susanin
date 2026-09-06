@@ -304,7 +304,7 @@ int promote_dry_run(ros_client_t *ros, const app_config_t *cfg) {
     int rc = verify_stage(ros, &desired);
     if (rc == 0) {
         printf("\nSafety gates: PASS\n");
-        printf("Would: snapshot production -> create rollback backups -> pause schedulers -> wait jobs idle -> update 4 sources -> verify -> clear legacy IP-only state/marked connections -> resume.\n");
+        printf("Would: snapshot production -> create rollback backups -> pause schedulers -> wait jobs idle -> update 4 sources -> verify -> clear incompatible adaptive runtime state -> resume.\n");
     } else {
         printf("\nSafety gates: BLOCKED\n");
     }
@@ -381,18 +381,18 @@ int promote_run(ros_client_t *ros, const app_config_t *cfg) {
                prod_names[i], desired.scripts[i].bytes, desired.scripts[i].fp);
     }
 
-    printf("Clearing legacy IP-only adaptive state before scheduler resume...\n");
+    printf("Clearing incompatible adaptive runtime before scheduler resume...\n");
 
     susanin_cleanup_stats_t migration;
 
     if (
-        susanin_cleanup_legacy_state(
+        susanin_cleanup_dev2_runtime(
             ros,
             &migration
         ) < 0
     ) {
         printf(
-            "FAIL legacy-state migration cleanup; restoring previous production sources "
+            "FAIL adaptive-state compatibility cleanup; restoring previous production sources "
             "and forcing adaptive fail-open.\n"
         );
 
@@ -425,8 +425,10 @@ int promote_run(ros_client_t *ros, const app_config_t *cfg) {
     }
 
     printf(
-        "  CLEAN legacy=%u marked-connections=%u\n",
+        "  CLEAN legacy=%u port=%u lazy-rules=%u marked-connections=%u\n",
         migration.legacy_entries,
+        migration.port_entries,
+        migration.lazy_rules,
         migration.marked_connections
     );
 
@@ -513,7 +515,7 @@ int rollback_run(ros_client_t *ros) {
         goto fail_restore_sched;
     }
 
-    printf("Clearing dev2 adaptive runtime state...\n");
+    printf("Clearing adaptive runtime state...\n");
 
     susanin_cleanup_stats_t cleanup;
 
@@ -529,7 +531,7 @@ int rollback_run(ros_client_t *ros) {
             );
 
         printf(
-            "FAIL dev2 runtime cleanup; adaptive-mangle-disable=%s.\n",
+            "FAIL adaptive runtime cleanup; adaptive-mangle-disable=%s.\n",
             fail_open == 0
                 ? "SUCCESS"
                 : "FAILED"

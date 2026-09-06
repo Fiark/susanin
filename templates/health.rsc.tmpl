@@ -1,3 +1,4 @@
+:local susaninAccuracyProfile "{{ACCURACY_PROFILE}}"
 :if ([/system script job print count-only as-value where script=[:jobname]] > 1) do={ :exit }
 :local healthRule [/ip firewall mangle find where comment="AUTO-AWG: L1 mark test"]
 :if ([:len $healthRule] = 0) do={ :exit }
@@ -149,6 +150,30 @@
 
 :onerror err in={
   /ip firewall address-list remove [find where list~"^auto_awg_test_udp_"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list~"^auto_awg_direct1_tcp_"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list~"^auto_awg_awg1_tcp_"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list~"^auto_awg_recheck_tcp_"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list~"^auto_awg_direct1_udp_"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list~"^auto_awg_awg1_udp_"]
+} do={}
+
+:onerror err in={
+  /ip firewall address-list remove [find where list~"^auto_awg_recheck_udp_"]
 } do={}
 
 :if ({{LOG_ERROR}}) do={

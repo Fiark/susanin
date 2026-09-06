@@ -210,10 +210,20 @@ static int render_one(const char *tmpl_name, const char *script_name,
     free(f);
     if (!g) return -1;
 
+    char *h = replace_all(
+        g,
+        "{{ACCURACY_PROFILE}}",
+        config_accuracy_profile_name(
+            cfg->accuracy_profile
+        )
+    );
+    free(g);
+    if (!h) return -1;
+
     snprintf(out->name, sizeof(out->name), "%s", script_name);
-    out->source = g;
-    out->bytes = strlen(g);
-    susanin_fingerprint_hex(g, out->fp);
+    out->source = h;
+    out->bytes = strlen(h);
+    susanin_fingerprint_hex(h, out->fp);
     return 0;
 }
 
