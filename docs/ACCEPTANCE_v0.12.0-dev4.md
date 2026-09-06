@@ -401,6 +401,252 @@ scheduler state is restored.
 
 The product rollback path also restored the exact pre-promotion FAST source.
 
+## M3 — MIDDLE -> SLOW -> rollback MIDDLE
+
+Result:
+
+    PASS
+
+M3 was executed on MikroTik RouterOS 7.23.3 / ARM64 with the same DEV4
+executable:
+
+    ca8f422bc005b2f5702c036ad18bf3758ea114b8
+
+The reference router began and ended on exact stable v0.11.5 production.
+
+### Reference -> MIDDLE setup
+
+DEV4 was configured for the MIDDLE accuracy profile and promoted from the
+stable reference.
+
+Exact MIDDLE source:
+
+    HEALTH  bytes=5776   fnv1a64=89b3925ff2660c57
+    FAST    bytes=26100  fnv1a64=a6df6efc895000b4
+    DETECT  bytes=41521  fnv1a64=c31920dc5302d7db
+    JUDGE   bytes=16842  fnv1a64=6654d7bbb164e505
+
+Reference -> MIDDLE:
+
+    PASS
+
+The setup promotion also cleaned live stable runtime state:
+
+    legacy IP-only lists:
+        initial=2
+        remaining=0
+
+    adaptive connection marks:
+        initial=5
+        remaining=0
+        verification attempts=5
+
+### SLOW desired source
+
+DEV4 was switched to the SLOW accuracy profile.
+
+Exact SLOW stage:
+
+    HEALTH  bytes=5774   fnv1a64=b1ba0cb5c5ea267b
+    FAST    bytes=26098  fnv1a64=e005143cae6e3828
+    DETECT  bytes=41519  fnv1a64=6165a9bf88ed2537
+    JUDGE   bytes=16840  fnv1a64=25d83785b79b9661
+
+All four staged objects matched the accepted DEV3 SLOW executable logic.
+
+### MIDDLE runtime fixture
+
+Controlled normal tuple state was created for TCP and UDP:
+
+    WATCH
+    TEST
+    OK
+    COOLDOWN
+
+Controlled MIDDLE evidence was also created:
+
+    DIRECT1 tcp
+    AWG1    tcp
+    DIRECT1 udp
+    AWG1    udp
+
+Total controlled address-list fixture:
+
+    12
+
+Evidence counts:
+
+    DIRECT1 = 2
+    AWG1    = 2
+
+SLOW-only RECHECK state before migration:
+
+    0
+
+Two controlled lazy mark rules were created for tcp/54321:
+
+    AUTO-AWG: P tcp 54321 OK
+    AUTO-AWG: P tcp 54321 TEST
+
+Lazy-rule fixture count:
+
+    2
+
+Controlled live connection-mark evidence was produced.
+
+Mangle counters:
+
+    TEST packets = 1
+    OK packets   = 2
+
+Visible controlled conntrack marks before migration:
+
+    TEST = 1
+    OK   = 2
+
+### MIDDLE -> SLOW compatibility cleanup
+
+Promotion completed successfully.
+
+Observed cleanup:
+
+    dev2 lazy rules:
+        initial=2
+        remaining=0
+        verification attempts=1
+
+    dev2 port/profile lists:
+        initial=12
+        remaining=0
+        verification attempts=1
+
+    legacy IP-only lists:
+        initial=0
+        remaining=0
+
+    adaptive TEST/OK connection marks:
+        initial=3
+        remaining=0
+        verification attempts=5
+
+During live conntrack verification RouterOS 7.23.3 returned two transient:
+
+    no such item (4)
+
+API errors.
+
+The bounded connection-scan retry path handled these transient live-conntrack
+races and still reached the authoritative post-condition:
+
+    remaining=0
+
+This is accepted evidence that the DEV4 bounded retry implementation survives
+the RouterOS 7.23.3 dynamic conntrack serialization race without an unbounded
+loop and without leaving incompatible adaptive state.
+
+### SLOW production post-condition
+
+Exact promoted SLOW source:
+
+    5774 / 26098 / 41519 / 16840
+
+Rollback backups contained exact previous MIDDLE source:
+
+    5776 / 26100 / 41521 / 16842
+
+After promotion:
+
+    controlled address-list fixture = 0
+    controlled lazy rules           = 0
+    controlled TEST mark            = 0
+    controlled OK mark              = 0
+    standard stage objects          = 0
+    managed schedulers enabled      = 4 / 4
+
+The controlled MIDDLE DIRECT1/AWG1 addresses were explicitly checked against
+the SLOW RECHECK namespace.
+
+Result:
+
+    MIDDLE evidence reused as RECHECK = 0
+
+Therefore MIDDLE evidence was not silently reused as SLOW re-check evidence.
+
+### Product rollback SLOW -> MIDDLE
+
+`SUSANIN ROLLBACK v0.12.0-dev4` completed successfully.
+
+Rollback runtime cleanup reached zero incompatible state.
+
+Exact restored MIDDLE production:
+
+    HEALTH  bytes=5776  fnv1a64=89b3925ff2660c57
+    FAST    bytes=26100 fnv1a64=a6df6efc895000b4
+    DETECT  bytes=41521 fnv1a64=c31920dc5302d7db
+    JUDGE   bytes=16842 fnv1a64=6654d7bbb164e505
+
+Managed schedulers:
+
+    4 / 4 enabled
+
+Result:
+
+    PASS
+
+### Reference-router recovery
+
+Managed schedulers were paused and managed jobs were confirmed idle before
+restoring the exact v0.11.5 safety copies.
+
+Exact final production:
+
+    HEALTH  4186
+    FAST    4041
+    DETECT  8075
+    JUDGE   6122
+
+Final reference-router gates:
+
+    production sources = 4186 / 4041 / 8075 / 6122
+    schedulers          = 4 / 4
+    fixed mangle        = 8 / 8
+    AWG                 = 1 / 1 / 1
+
+Final adaptive residue:
+
+    port-aware state = 0
+    lazy rules       = 0
+    DEV3 stage holds = 0
+    rollback backups = 0
+    E2E safety copies= 0
+
+Accepted DEV3 MIDDLE inert stage restored:
+
+    HEALTH  5776
+    FAST    26100
+    DETECT  41521
+    JUDGE   16842
+
+Temporary RouterOS M3 harness:
+
+    removed
+
+### M3 conclusion
+
+M3 is accepted.
+
+The test proves that MIDDLE -> SLOW migration clears normal tuple state,
+MIDDLE DIRECT1/AWG1 evidence, lazy rules and adaptive TEST/OK connection
+marks before SLOW resumes.
+
+MIDDLE evidence was not reused as SLOW RECHECK evidence.
+
+The test also provides physical RouterOS 7.23.3 evidence that bounded
+conntrack retry survives transient `no such item` races and converges to the
+required zero-state post-condition.
+
+The product rollback path restored the exact previous MIDDLE source.
+
 Next migration acceptance case:
 
-    M3 — MIDDLE -> SLOW
+    M4 — SLOW -> FAST
