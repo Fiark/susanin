@@ -2,7 +2,11 @@ name: Release ARM64 artifacts
 
 on:
   push:
-    tags: ['v*']
+    tags:
+      # Internal vX.Y.Z-devN tags freeze accepted development milestones
+      # but must not invoke the production release pipeline.
+      - 'v*'
+      - '!v*-dev*'
   workflow_dispatch:
     inputs:
       tag:
