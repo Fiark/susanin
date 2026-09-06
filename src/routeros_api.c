@@ -233,31 +233,65 @@ int ros_command(ros_client_t *client, const char *const *words, size_t nwords,
     }
     if (send_word(client->fd, "") < 0) return -1;
 
+    /*
+     * A RouterOS API command is not complete until its final !done reply.
+     *
+     * In particular, !trap is an error reply inside that command response,
+     * not the command terminator. Returning immediately on !trap leaves the
+     * following !done unread in the TCP stream. The next ros_command() then
+     * consumes that stale !done and the whole synchronous API session becomes
+     * misaligned.
+     *
+     * Remember the first command/callback error, drain the response through
+     * !done, then return the remembered result. !fatal is different: RouterOS
+     * closes the API connection after it, so close our side immediately.
+     */
+    int command_rc = 0;
+
     for (;;) {
         ros_sentence_t s;
         if (recv_sentence(client->fd, &s) < 0) return -1;
 
         int cb_rc = 0;
-        if (cb) cb_rc = cb(&s, ctx);
+
+        /*
+         * Once a callback has failed we still have to drain the current
+         * command, but must not feed additional replies into that callback.
+         */
+        if (cb && command_rc == 0) {
+            cb_rc = cb(&s, ctx);
+        }
 
         /* RouterOS 7.18+ may emit !empty for commands with no data, but the
-           protocol still terminates every command with a final !done sentence.
-           Treating !empty as terminal leaves that !done unread on the socket;
-           the next command then consumes the stale !done and appears to return
-           an empty result. This is especially visible during fresh install,
-           where many managed-object lookups are expected to be empty. */
+           protocol still terminates every non-fatal command with a final
+           !done sentence. */
         int done = ros_is_reply(&s, "!done");
-        int trap = ros_is_reply(&s, "!trap") || ros_is_reply(&s, "!fatal");
+        int trap = ros_is_reply(&s, "!trap");
+        int fatal = ros_is_reply(&s, "!fatal");
 
-        if (trap) {
+        if (trap || fatal) {
             const char *msg = ros_get_attr(&s, "message");
             fprintf(stderr, "RouterOS API error: %s\n", msg ? msg : "unknown error");
         }
 
+        if (cb_rc != 0 && command_rc == 0) {
+            command_rc = cb_rc;
+        }
+
+        if (trap && command_rc == 0) {
+            command_rc = -1;
+        }
+
         free_sentence(&s);
-        if (cb_rc != 0) return cb_rc;
-        if (trap) return -1;
-        if (done) return 0;
+
+        if (fatal) {
+            ros_close(client);
+            return -1;
+        }
+
+        if (done) {
+            return command_rc;
+        }
     }
 }
 
