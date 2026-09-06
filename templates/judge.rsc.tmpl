@@ -3,23 +3,35 @@
 :if ([:len $healthRule] = 0) do={ :exit }
 :if ([/ip firewall mangle get $healthRule disabled] = true) do={ :exit }
 
-:local susaninSnapshotOK true
-:local conns
-:onerror susaninSnapshotError in={
-  :set conns [/ip firewall connection print as-value where (connection-mark=auto-awg-test-conn or connection-mark=auto-awg-ok-conn)]
-} do={
-  :set susaninSnapshotOK false
-}
-:if ($susaninSnapshotOK = false) do={ :exit }
+# RouterOS 7.23.3 can successfully filter the live connection table by
+# dynamic connection-mark while returning connection-mark as an empty value
+# inside the corresponding "print as-value" map.
+#
+# Query TEST and OK marks separately and carry the known mark from the exact
+# query instead of reading the unreliable dynamic property back from the map.
+:foreach connMark in={"auto-awg-test-conn";"auto-awg-ok-conn"} do={
+  :local susaninSnapshotOK true
+  :local conns
 
-:foreach c in=$conns do={
+  :onerror susaninSnapshotError in={
+    :if ($connMark = "auto-awg-test-conn") do={
+      :set conns [/ip firewall connection print as-value where connection-mark=auto-awg-test-conn]
+    } else={
+      :set conns [/ip firewall connection print as-value where connection-mark=auto-awg-ok-conn]
+    }
+  } do={
+    :set susaninSnapshotOK false
+  }
+
+  :if ($susaninSnapshotOK = false) do={ :exit }
+
+  :foreach c in=$conns do={
   :onerror susaninFlowError in={
   :local id ($c->".id")
   :local src [:toip ($c->"src-address")]
   :local dst [:toip ($c->"dst-address")]
   :local port ($c->"dst-port")
   :local proto [:tostr ($c->"protocol")]
-  :local connMark [:tostr ($c->"connection-mark")]
   :local op ($c->"orig-packets")
   :local rp ($c->"repl-packets")
   :local ob ($c->"orig-bytes")
@@ -176,4 +188,5 @@
     }
   }
   } do={}
+}
 }
