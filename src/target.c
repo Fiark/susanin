@@ -1112,9 +1112,12 @@ int target_set_routing_table(
     }
 
     /*
-     * The egress interface is now informational only in table mode.
-     * A routing table may use recursive routes, ECMP or multiple interfaces.
-     * HEALTH and packet routing operate directly on the selected table.
+     * Packet routing remains table-native.
+     *
+     * RouterOS 7.23.3 /ping does not accept routing-table=, so a uniquely
+     * resolved egress is also retained for the generated HEALTH probe.
+     * renderer_build() rejects staging later if no concrete IPv4 egress
+     * can be resolved.
      */
     const char *resolved_egress = NULL;
 

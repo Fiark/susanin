@@ -252,6 +252,30 @@ int renderer_build(ros_client_t *ros, const app_config_t *cfg, susanin_render_bu
                 ctx.if_count, cfg->lan_list);
         return -1;
     }
+
+    /*
+     * RouterOS 7.23.3 /ping does not accept routing-table=.
+     * HEALTH therefore probes the uniquely resolved egress interface
+     * using that interface's IPv4 source address.  Never stage an
+     * unverifiable HEALTH source: fail before any production mutation.
+     */
+    if (
+        !cfg->egress_interface ||
+        !*cfg->egress_interface ||
+        !ctx.egress_address[0]
+    ) {
+        fprintf(
+            stderr,
+            "Susanin render: target '%s %s' has no uniquely resolved IPv4 egress; "
+            "RouterOS 7.23.3 HEALTH probe requires a concrete egress interface address\n",
+            config_target_mode_name(cfg->target_mode),
+            cfg->target_value
+                ? cfg->target_value
+                : "<not selected>"
+        );
+        return -1;
+    }
+
     char *match = lan_match_snippet(&ctx);
     if (!match) return -1;
 
