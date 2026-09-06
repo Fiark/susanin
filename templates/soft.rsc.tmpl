@@ -4,6 +4,11 @@
 :if ([:len $healthRule] = 0) do={ :exit }
 :if ([/ip firewall mangle get $healthRule disabled] = true) do={ :exit }
 
+# SLOW is intentionally not active until its dedicated dev3
+# state-machine implementation. Fail open to DIRECT rather than
+# silently providing FAST/MIDDLE confidence under the SLOW name.
+:if ($susaninAccuracyProfile = "slow") do={ :exit }
+
 :local susaninSnapshotOK true
 :local conns
 :onerror susaninSnapshotError in={
@@ -25,6 +30,7 @@
   :local testList ("auto_awg_test_" . $proto . "_" . [:tostr $port])
   :local okList ("auto_awg_ok_" . $proto . "_" . [:tostr $port])
   :local coolList ("auto_awg_cooldown_" . $proto . "_" . [:tostr $port])
+  :local direct1List ("auto_awg_direct1_" . $proto . "_" . [:tostr $port])
   :local op ($c->"orig-packets")
   :local rp ($c->"repl-packets")
 
@@ -86,6 +92,65 @@
         :if (($directHit = false) && ($trigger = true)) do={
           :if (([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0)) do={
             :local lazyReady true
+            :local profileProceed true
+
+            :if ($susaninAccuracyProfile = "middle") do={
+              :local direct1Ids [/ip firewall address-list find where list=$direct1List and address=$dst]
+              :local currentEvidenceComment ("DEV3 DIRECT1 " . [:tostr $id])
+              :local sameEvidence false
+              :local evidenceReadable true
+
+              :foreach direct1EvidenceId in=$direct1Ids do={
+                :onerror direct1ReadError in={
+                  :local firstEvidenceComment [:tostr [/ip firewall address-list get $direct1EvidenceId comment]]
+
+                  :if ($firstEvidenceComment = $currentEvidenceComment) do={
+                    :set sameEvidence true
+                  }
+                } do={
+                  :set evidenceReadable false
+                }
+              }
+
+              :if ([:len $direct1Ids] = 0) do={
+                :local evidenceAdded true
+
+                :onerror direct1AddError in={
+                  /ip firewall address-list add list=$direct1List address=$dst timeout=2m comment=$currentEvidenceComment
+                } do={
+                  :set evidenceAdded false
+                }
+
+                :if ($evidenceAdded = true) do={
+                  :onerror direct1ConnRemoveError in={
+                    /ip firewall connection remove $id
+                  } do={}
+
+                  :set profileProceed false
+                  :set lazyReady false
+
+                  :if ({{LOG_DEBUG}}) do={
+                    :log warning ("AUTO-AWG: MIDDLE DIRECT evidence 1 " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                  }
+                } else={
+                  :set profileProceed false
+                  :set lazyReady false
+
+                  :if ({{LOG_ERROR}}) do={
+                    :log warning ("AUTO-AWG: MIDDLE DIRECT evidence state unavailable for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                  }
+                }
+              } else={
+                :if (($evidenceReadable = false) || ($sameEvidence = true)) do={
+                  :onerror direct1RepeatRemoveError in={
+                    /ip firewall connection remove $id
+                  } do={}
+
+                  :set profileProceed false
+                  :set lazyReady false
+                }
+              }
+            }
             :local routeAnchor [/ip firewall mangle find where comment="AUTO-AWG: L2 route confirmed"]
             :local okRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " OK")
             :local testRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " TEST")
@@ -167,12 +232,15 @@
             }
 
             :if ($lazyReady = true) do={
+              :if ($susaninAccuracyProfile = "middle") do={
+                :onerror direct1ClearError in={ /ip firewall address-list remove [find where list=$direct1List and address=$dst] } do={}
+              }
               :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
               /ip firewall address-list add list=$testList address=$dst timeout=1m comment=($reason . " " . [:tostr $port])
               :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT " . $reason . " " . [:tostr $dst] . ":" . [:tostr $port]) }
               :onerror err in={ /ip firewall connection remove $id } do={}
             } else={
-              :if ({{LOG_ERROR}}) do={
+              :if (($profileProceed = true) && ({{LOG_ERROR}})) do={
                 :log warning ("AUTO-AWG: lazy rules unavailable for " . $proto . ":" . [:tostr $port] . ", keeping DIRECT")
               }
             }
@@ -203,6 +271,65 @@
 
           :if (($directHit = false) && ([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0)) do={
             :local lazyReady true
+            :local profileProceed true
+
+            :if ($susaninAccuracyProfile = "middle") do={
+              :local direct1Ids [/ip firewall address-list find where list=$direct1List and address=$dst]
+              :local currentEvidenceComment ("DEV3 DIRECT1 " . [:tostr $id])
+              :local sameEvidence false
+              :local evidenceReadable true
+
+              :foreach direct1EvidenceId in=$direct1Ids do={
+                :onerror direct1ReadError in={
+                  :local firstEvidenceComment [:tostr [/ip firewall address-list get $direct1EvidenceId comment]]
+
+                  :if ($firstEvidenceComment = $currentEvidenceComment) do={
+                    :set sameEvidence true
+                  }
+                } do={
+                  :set evidenceReadable false
+                }
+              }
+
+              :if ([:len $direct1Ids] = 0) do={
+                :local evidenceAdded true
+
+                :onerror direct1AddError in={
+                  /ip firewall address-list add list=$direct1List address=$dst timeout=2m comment=$currentEvidenceComment
+                } do={
+                  :set evidenceAdded false
+                }
+
+                :if ($evidenceAdded = true) do={
+                  :onerror direct1ConnRemoveError in={
+                    /ip firewall connection remove $id
+                  } do={}
+
+                  :set profileProceed false
+                  :set lazyReady false
+
+                  :if ({{LOG_DEBUG}}) do={
+                    :log warning ("AUTO-AWG: MIDDLE DIRECT evidence 1 " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                  }
+                } else={
+                  :set profileProceed false
+                  :set lazyReady false
+
+                  :if ({{LOG_ERROR}}) do={
+                    :log warning ("AUTO-AWG: MIDDLE DIRECT evidence state unavailable for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                  }
+                }
+              } else={
+                :if (($evidenceReadable = false) || ($sameEvidence = true)) do={
+                  :onerror direct1RepeatRemoveError in={
+                    /ip firewall connection remove $id
+                  } do={}
+
+                  :set profileProceed false
+                  :set lazyReady false
+                }
+              }
+            }
             :local routeAnchor [/ip firewall mangle find where comment="AUTO-AWG: L2 route confirmed"]
             :local okRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " OK")
             :local testRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " TEST")
@@ -284,12 +411,15 @@
             }
 
             :if ($lazyReady = true) do={
+              :if ($susaninAccuracyProfile = "middle") do={
+                :onerror direct1ClearError in={ /ip firewall address-list remove [find where list=$direct1List and address=$dst] } do={}
+              }
               :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
               /ip firewall address-list add list=$testList address=$dst timeout=1m comment=("UDP " . [:tostr $port])
               :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT UDP " . [:tostr $dst] . ":" . [:tostr $port]) }
               :onerror err in={ /ip firewall connection remove $id } do={}
             } else={
-              :if ({{LOG_ERROR}}) do={
+              :if (($profileProceed = true) && ({{LOG_ERROR}})) do={
                 :log warning ("AUTO-AWG: lazy rules unavailable for " . $proto . ":" . [:tostr $port] . ", keeping DIRECT")
               }
             }
@@ -332,6 +462,65 @@
                 :if ($left <= 4s) do={
                   :if (([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$testList and address=$dst]] = 0) && ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0)) do={
                     :local lazyReady true
+                    :local profileProceed true
+
+                    :if ($susaninAccuracyProfile = "middle") do={
+                      :local direct1Ids [/ip firewall address-list find where list=$direct1List and address=$dst]
+                      :local currentEvidenceComment ("DEV3 DIRECT1 " . [:tostr $id])
+                      :local sameEvidence false
+                      :local evidenceReadable true
+
+                      :foreach direct1EvidenceId in=$direct1Ids do={
+                        :onerror direct1ReadError in={
+                          :local firstEvidenceComment [:tostr [/ip firewall address-list get $direct1EvidenceId comment]]
+
+                          :if ($firstEvidenceComment = $currentEvidenceComment) do={
+                            :set sameEvidence true
+                          }
+                        } do={
+                          :set evidenceReadable false
+                        }
+                      }
+
+                      :if ([:len $direct1Ids] = 0) do={
+                        :local evidenceAdded true
+
+                        :onerror direct1AddError in={
+                          /ip firewall address-list add list=$direct1List address=$dst timeout=2m comment=$currentEvidenceComment
+                        } do={
+                          :set evidenceAdded false
+                        }
+
+                        :if ($evidenceAdded = true) do={
+                          :onerror direct1ConnRemoveError in={
+                            /ip firewall connection remove $id
+                          } do={}
+
+                          :set profileProceed false
+                          :set lazyReady false
+
+                          :if ({{LOG_DEBUG}}) do={
+                            :log warning ("AUTO-AWG: MIDDLE DIRECT evidence 1 " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                          }
+                        } else={
+                          :set profileProceed false
+                          :set lazyReady false
+
+                          :if ({{LOG_ERROR}}) do={
+                            :log warning ("AUTO-AWG: MIDDLE DIRECT evidence state unavailable for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+                          }
+                        }
+                      } else={
+                        :if (($evidenceReadable = false) || ($sameEvidence = true)) do={
+                          :onerror direct1RepeatRemoveError in={
+                            /ip firewall connection remove $id
+                          } do={}
+
+                          :set profileProceed false
+                          :set lazyReady false
+                        }
+                      }
+                    }
                     :local routeAnchor [/ip firewall mangle find where comment="AUTO-AWG: L2 route confirmed"]
                     :local okRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " OK")
                     :local testRuleComment ("AUTO-AWG: P " . $proto . " " . [:tostr $port] . " TEST")
@@ -413,12 +602,15 @@
                     }
 
                     :if ($lazyReady = true) do={
+                      :if ($susaninAccuracyProfile = "middle") do={
+                        :onerror direct1ClearError in={ /ip firewall address-list remove [find where list=$direct1List and address=$dst] } do={}
+                      }
                       :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
                       /ip firewall address-list add list=$testList address=$dst timeout=1m comment="QUIC-LATE-STALL 443"
                       :if ({{LOG_DEBUG}}) do={ :log warning ("AUTO-AWG: SOFT QUIC-LATE-STALL " . [:tostr $dst] . ":443") }
                       :onerror err in={ /ip firewall connection remove $id } do={}
                     } else={
-                      :if ({{LOG_ERROR}}) do={
+                      :if (($profileProceed = true) && ({{LOG_ERROR}})) do={
                         :log warning ("AUTO-AWG: lazy rules unavailable for " . $proto . ":" . [:tostr $port] . ", keeping DIRECT")
                       }
                     }

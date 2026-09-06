@@ -4,6 +4,11 @@
 :if ([:len $healthRule] = 0) do={ :exit }
 :if ([/ip firewall mangle get $healthRule disabled] = true) do={ :exit }
 
+# SLOW is intentionally not active until its dedicated dev3
+# state-machine implementation. Fail open to DIRECT rather than
+# silently providing FAST/MIDDLE confidence under the SLOW name.
+:if ($susaninAccuracyProfile = "slow") do={ :exit }
+
 # RouterOS 7.23.3 can successfully filter the live connection table by
 # dynamic connection-mark while returning connection-mark as an empty value
 # inside the corresponding "print as-value" map.
@@ -45,12 +50,18 @@
     :local okList ""
     :local watchList ""
     :local coolList ""
+    :local direct1List ""
+    :local awg1List ""
+    :local recheckList ""
 
     :if ($proto = "tcp") do={
       :set testList ("auto_awg_test_tcp_" . [:tostr $port])
       :set okList ("auto_awg_ok_tcp_" . [:tostr $port])
       :set watchList ("auto_awg_watch_tcp_" . [:tostr $port])
       :set coolList ("auto_awg_cooldown_tcp_" . [:tostr $port])
+      :set direct1List ("auto_awg_direct1_tcp_" . [:tostr $port])
+      :set awg1List ("auto_awg_awg1_tcp_" . [:tostr $port])
+      :set recheckList ("auto_awg_recheck_tcp_" . [:tostr $port])
     }
 
     :if ($proto = "udp") do={
@@ -58,6 +69,9 @@
       :set okList ("auto_awg_ok_udp_" . [:tostr $port])
       :set watchList ("auto_awg_watch_udp_" . [:tostr $port])
       :set coolList ("auto_awg_cooldown_udp_" . [:tostr $port])
+      :set direct1List ("auto_awg_direct1_udp_" . [:tostr $port])
+      :set awg1List ("auto_awg_awg1_udp_" . [:tostr $port])
+      :set recheckList ("auto_awg_recheck_udp_" . [:tostr $port])
     }
 
     :local directHit false
@@ -101,21 +115,85 @@
       }
 
       :if ($good = true) do={
-        :if ([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) do={
-          /ip firewall address-list add list=$okList address=$dst timeout=6h comment=("AUTO confirmed " . $proto . ":" . [:tostr $port])
-          :if ({{LOG_INFO}}) do={
-            :log info ("AUTO-AWG: CONFIRMED " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+        :local confirmOK true
+
+        :if ($susaninAccuracyProfile = "middle") do={
+          :set confirmOK false
+
+          :local awg1Ids [/ip firewall address-list find where list=$awg1List and address=$dst]
+          :local currentEvidenceComment ("DEV3 AWG1 " . [:tostr $id])
+          :local sameEvidence false
+          :local evidenceReadable true
+
+          :foreach awg1EvidenceId in=$awg1Ids do={
+            :onerror awg1ReadError in={
+              :local firstEvidenceComment [:tostr [/ip firewall address-list get $awg1EvidenceId comment]]
+
+              :if ($firstEvidenceComment = $currentEvidenceComment) do={
+                :set sameEvidence true
+              }
+            } do={
+              :set evidenceReadable false
+            }
+          }
+
+          :if ([:len $awg1Ids] = 0) do={
+            :local evidenceAdded true
+
+            :onerror awg1AddError in={
+              /ip firewall address-list add list=$awg1List address=$dst timeout=2m comment=$currentEvidenceComment
+            } do={
+              :set evidenceAdded false
+            }
+
+            :if ($evidenceAdded = true) do={
+              :onerror awg1ConnRemoveError in={
+                /ip firewall connection remove $id
+              } do={}
+
+              :if ({{LOG_DEBUG}}) do={
+                :log warning ("AUTO-AWG: MIDDLE AWG evidence 1 " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+              }
+            } else={
+              :if ({{LOG_ERROR}}) do={
+                :log warning ("AUTO-AWG: MIDDLE AWG evidence state unavailable for " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+              }
+            }
+          } else={
+            :if (($evidenceReadable = false) || ($sameEvidence = true)) do={
+              :onerror awg1RepeatRemoveError in={
+                /ip firewall connection remove $id
+              } do={}
+            } else={
+              :set confirmOK true
+            }
           }
         }
 
-        :onerror err in={ /ip firewall address-list remove [find where list=$testList and address=$dst] } do={}
-        :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
-        :onerror err in={ /ip firewall address-list remove [find where list=$coolList and address=$dst] } do={}
+        :if ($confirmOK = true) do={
+          :if ([:len [/ip firewall address-list find where list=$okList and address=$dst]] = 0) do={
+            /ip firewall address-list add list=$okList address=$dst timeout=6h comment=("AUTO confirmed " . $proto . ":" . [:tostr $port])
+
+            :if ({{LOG_INFO}}) do={
+              :log info ("AUTO-AWG: CONFIRMED " . [:tostr $dst] . " via " . $proto . ":" . [:tostr $port])
+            }
+          }
+
+          :onerror err in={ /ip firewall address-list remove [find where list=$testList and address=$dst] } do={}
+          :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
+          :onerror err in={ /ip firewall address-list remove [find where list=$coolList and address=$dst] } do={}
+          :onerror err in={ /ip firewall address-list remove [find where list=$direct1List and address=$dst] } do={}
+          :onerror err in={ /ip firewall address-list remove [find where list=$awg1List and address=$dst] } do={}
+          :onerror err in={ /ip firewall address-list remove [find where list=$recheckList and address=$dst] } do={}
+        }
       }
 
       :if (($good = false) && ($failed = true)) do={
         :onerror err in={ /ip firewall address-list remove [find where list=$testList and address=$dst] } do={}
         :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
+        :onerror err in={ /ip firewall address-list remove [find where list=$direct1List and address=$dst] } do={}
+        :onerror err in={ /ip firewall address-list remove [find where list=$awg1List and address=$dst] } do={}
+        :onerror err in={ /ip firewall address-list remove [find where list=$recheckList and address=$dst] } do={}
 
         :if ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0) do={
           /ip firewall address-list add list=$coolList address=$dst timeout=5m comment=("DIRECT+AWG failed " . $proto . ":" . [:tostr $port])
@@ -164,6 +242,9 @@
           :onerror err in={ /ip firewall address-list remove [find where list=$okList and address=$dst] } do={}
           :onerror err in={ /ip firewall address-list remove [find where list=$testList and address=$dst] } do={}
           :onerror err in={ /ip firewall address-list remove [find where list=$watchList and address=$dst] } do={}
+          :onerror err in={ /ip firewall address-list remove [find where list=$direct1List and address=$dst] } do={}
+          :onerror err in={ /ip firewall address-list remove [find where list=$awg1List and address=$dst] } do={}
+          :onerror err in={ /ip firewall address-list remove [find where list=$recheckList and address=$dst] } do={}
 
           :if ([:len [/ip firewall address-list find where list=$coolList and address=$dst]] = 0) do={
             /ip firewall address-list add list=$coolList address=$dst timeout=30s comment=("Confirmed AWG " . $proto . " route failed")
