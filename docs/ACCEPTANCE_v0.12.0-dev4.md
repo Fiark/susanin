@@ -1166,6 +1166,201 @@ immediately previous FAST production.
 Controlled adaptive runtime is conservatively cleared, and production remains
 byte-for-byte equal to the desired FAST source after re-promotion.
 
+## RouterOS 7.23.3 HEALTH regression found during M6
+
+Status:
+
+    FIXED AND PHYSICALLY VERIFIED
+
+The first M6 profile-switch repetition attempt did not expose a migration
+transaction failure.
+
+The first FAST -> MIDDLE transition itself completed successfully:
+
+    desired MIDDLE stage        = exact
+    promotion result            = SUCCESS
+    rollback backup profile     = FAST
+    controlled runtime residue  = 0
+    desired production equality = 4 / 4
+    stage residue               = 0
+
+The M6 topology gate then observed:
+
+    fixed AUTO-AWG mangle enabled = 0 / 8
+
+Reference recovery returned the router to the exact stable v0.11.5 state.
+
+### Root cause isolation
+
+A separate read-only RouterOS 7.23.3 probe comparison established:
+
+Stable v0.11.5 health method:
+
+    /ping ... interface=wg-awg-proxy src-address=10.8.1.46
+
+Result:
+
+    1.1.1.1 = 3 / 3
+    8.8.8.8 = 3 / 3
+    total   = 6 / 6
+
+DEV4 ca8f422 health method:
+
+    /ping ... routing-table=r_to_awg
+
+RouterOS 7.23.3 rejected that syntax:
+
+    bad parameter routing-table
+
+Result:
+
+    1.1.1.1 = 0 / 3
+    8.8.8.8 = 0 / 3
+    total   = 0 / 6
+
+The routing table itself still had its active default route through:
+
+    wg-awg-proxy
+
+RouterOS logs also recorded the resulting false fail-open event:
+
+    AUTO-AWG: routing target DOWN after 2 health misses, fallback to DIRECT
+
+Therefore the M6 `fixed=0/8` gate was valid and exposed a real DEV4 HEALTH
+regression.
+
+The migration harness was not weakened.
+
+### Source fix
+
+The superseded executable candidate was:
+
+    ca8f422bc005b2f5702c036ad18bf3758ea114b8
+
+The fix was committed as:
+
+    490eb839cb42551707b6640bd20f7a5d29484f5b
+    Fix RouterOS 7.23.3 health probe
+
+The fix:
+
+- removes unsupported RouterOS 7.23.3 `/ping routing-table=...`;
+- resolves and retains the concrete egress interface for HEALTH;
+- probes using the egress interface and its IPv4 source address;
+- blocks rendering when no concrete IPv4 HEALTH egress can be resolved;
+- leaves adaptive packet routing table-native.
+
+Strict native build passed with:
+
+    -Os -pipe -std=c11 -Wall -Wextra -Wpedantic -Werror
+
+### Replacement ARM64 candidate
+
+Exact candidate:
+
+    commit:
+        490eb839cb42551707b6640bd20f7a5d29484f5b
+
+    image:
+        27e59450fdcc973ad32388be3390bfe9c79408998c3502e3081328198a6df35c
+
+    tar size:
+        9083904
+
+    tar sha256:
+        1eb027c1f6ad22be51c87e004a6287627664605827c4e9147c8569dc6363f0e4
+
+The ARM64 binary and runtime templates inside the image were verified before
+RouterOS import.
+
+The image was imported on the RouterOS 7.23.3 ARM64 reference router with
+isolated data storage:
+
+    /susanin-data-v012dev4-490eb83 -> /data
+
+Stable production remained untouched during import.
+
+### Physical HEALTH regression test
+
+The replacement candidate resolved the selected routing table to:
+
+    table  = r_to_awg
+    egress = wg-awg-proxy
+
+Exact new FAST stage:
+
+    HEALTH  bytes=6148   fnv1a64=cafdf828c49d2946
+    FAST    bytes=26098  fnv1a64=0c9672d93a6a4e85
+    DETECT  bytes=41519  fnv1a64=0ee9c8e6708bc6e8
+    JUDGE   bytes=16840  fnv1a64=72733543f4561160
+
+Rendered HEALTH source verification:
+
+    unsupported routing-table ping = absent
+    interface/src-address probe    = present
+    wg-awg-proxy                   = present
+
+The exact newly rendered HEALTH source was copied into a temporary inert test
+script.
+
+The stable v0.11.5 HEALTH scheduler was paused during the probe sequence so it
+could not mask the result.
+
+Six consecutive executions were performed.
+
+Every run reached both configured external health addresses and finished with:
+
+    fixed AUTO-AWG mangle = 8 / 8 enabled
+    auto_awg_health_fail  = 0
+
+Aggregate result:
+
+    exact new HEALTH runs = 6 / 6 PASS
+    false health misses   = 0
+    false fail-open       = 0
+
+### Reference recovery
+
+After the HEALTH regression test:
+
+    production source = 4186 / 4041 / 8075 / 6122
+    schedulers        = 4 / 4
+    fixed mangle      = 8 / 8
+    AWG               = 1 / 1 / 1
+
+Accepted DEV3 MIDDLE inert stage was restored:
+
+    5776 / 26100 / 41521 / 16842
+
+Test residue:
+
+    DEV3 stage holds        = 0
+    temporary HEALTH script = 0
+    health fail-list        = 0
+
+Controller state:
+
+    stable v0.11.5       = RUNNING
+    ca8f422              = STOPPED / superseded
+    490eb83              = STOPPED / current candidate
+
+### HEALTH regression conclusion
+
+The RouterOS 7.23.3 HEALTH regression is accepted as fixed.
+
+The physical test proves that the replacement candidate no longer falsely
+declares the working `r_to_awg` / `wg-awg-proxy` target down due to unsupported
+RouterOS ping syntax.
+
+The previous candidate `ca8f422` is superseded.
+
+The current executable candidate for the remaining DEV4 acceptance work is:
+
+    490eb839cb42551707b6640bd20f7a5d29484f5b
+
+M6 itself remains pending and must be repeated against this replacement
+candidate with the original fixed-mangle safety gate retained.
+
 Next migration acceptance case:
 
     M6 — profile-switch repetition
