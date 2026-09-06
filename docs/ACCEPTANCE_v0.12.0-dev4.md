@@ -1361,6 +1361,486 @@ The current executable candidate for the remaining DEV4 acceptance work is:
 M6 itself remains pending and must be repeated against this replacement
 candidate with the original fixed-mangle safety gate retained.
 
+## M6 — profile-switch repetition
+
+Result:
+
+    PASS
+
+M6 V2 was executed on MikroTik RouterOS 7.23.3 / ARM64 using the replacement
+DEV4 executable:
+
+    490eb839cb42551707b6640bd20f7a5d29484f5b
+
+ARM64 image:
+
+    27e59450fdcc973ad32388be3390bfe9c79408998c3502e3081328198a6df35c
+
+The test intentionally retained the original fixed-mangle safety gate which
+had exposed the earlier RouterOS 7.23.3 HEALTH regression.
+
+The bounded sequence was:
+
+    stable v0.11.5 -> FAST
+    FAST           -> MIDDLE
+    MIDDLE         -> SLOW
+    SLOW           -> FAST
+    FAST           -> MIDDLE
+
+The initial stable -> FAST operation was a setup transition.
+
+The four following transitions are the M6 repeated profile-switch sequence.
+
+### Updated 490eb83 desired-source identities
+
+FAST:
+
+    HEALTH  bytes=6148   fnv1a64=cafdf828c49d2946
+    FAST    bytes=26098  fnv1a64=0c9672d93a6a4e85
+    DETECT  bytes=41519  fnv1a64=0ee9c8e6708bc6e8
+    JUDGE   bytes=16840  fnv1a64=72733543f4561160
+
+MIDDLE:
+
+    HEALTH  bytes=6150   fnv1a64=fe1c4593467d5283
+    FAST    bytes=26100  fnv1a64=a6df6efc895000b4
+    DETECT  bytes=41521  fnv1a64=c31920dc5302d7db
+    JUDGE   bytes=16842  fnv1a64=6654d7bbb164e505
+
+SLOW:
+
+    HEALTH  bytes=6148   fnv1a64=f912cdff44de2a8f
+    FAST    bytes=26098  fnv1a64=e005143cae6e3828
+    DETECT  bytes=41519  fnv1a64=6165a9bf88ed2537
+    JUDGE   bytes=16840  fnv1a64=25d83785b79b9661
+
+The HEALTH source in every rendered target profile was also checked for the
+RouterOS 7.23.3 fix:
+
+    unsupported /ping routing-table=  = absent
+    interface/src-address HEALTH      = present
+
+Every target bundle contained its requested accuracy-profile sentinel in all
+four generated scripts:
+
+    target profile sentinel = 4 / 4
+
+### Reference -> FAST setup
+
+Exact replacement-candidate FAST stage:
+
+    6148 / 26098 / 41519 / 16840
+
+FAST HEALTH fingerprint:
+
+    cafdf828c49d2946
+
+The fixed HEALTH render check passed before promotion.
+
+Reference -> FAST promotion completed successfully.
+
+Rollback backup objects:
+
+    4
+
+The setup rollback source was the exact stable v0.11.5 production:
+
+    4186 / 4041 / 8075 / 6122
+
+A fresh FAST stage was then rendered and compared directly with production:
+
+    setup FAST source equality = 4 / 4
+
+The production HEALTH script was executed after setup.
+
+Post-condition:
+
+    fixed AUTO-AWG mangle = 8 / 8
+    health fail-list      = 0
+
+Result:
+
+    reference -> FAST setup = PASS
+
+### M6 transition method
+
+Before every profile transition, M6 V2 created four temporary immutable
+snapshots of the exact current production source:
+
+    susanin-m6-prev-health
+    susanin-m6-prev-fast
+    susanin-m6-prev-detect
+    susanin-m6-prev-judge
+
+After promotion, every persistent rollback backup was compared byte-for-byte
+against that immediate previous production snapshot.
+
+This avoids relying on historical hard-coded fingerprints and proves the
+semantic rollback invariant directly.
+
+Required result after every transition:
+
+    rollback backup objects              = 4
+    immediate previous backup equality   = 4 / 4
+
+The temporary previous-source snapshots were then removed.
+
+### Controlled previous-profile runtime
+
+Each transition also received deterministic previous-profile runtime before
+promotion.
+
+FAST previous profile:
+
+    TEST tuple fixture = 1
+    lazy rule          = 1
+
+MIDDLE previous profile:
+
+    TEST    = 1
+    DIRECT1 = 1
+    AWG1    = 1
+    total tuple fixture = 3
+    lazy rule           = 1
+
+SLOW previous profile:
+
+    TEST    = 1
+    DIRECT1 = 1
+    AWG1    = 1
+    RECHECK = 1
+    total tuple fixture = 4
+    lazy rule           = 1
+
+After every promotion:
+
+    controlled previous-profile fixture = 0
+    controlled lazy rule                = 0
+    standard stage objects              = 0
+
+The product cleanup scans were allowed to observe additional live scheduler
+state.  The authoritative requirement was removal of the incompatible
+controlled previous-profile state and successful post-promotion topology
+verification.
+
+### Step 1 — FAST -> MIDDLE
+
+Desired source:
+
+    HEALTH  6150 / fe1c4593467d5283
+    FAST    26100 / a6df6efc895000b4
+    DETECT  41521 / c31920dc5302d7db
+    JUDGE   16842 / 6654d7bbb164e505
+
+Promotion result:
+
+    SUCCESS
+
+Observed cleanup scan:
+
+    lazy rules:
+        initial=3
+        remaining=0
+        verification attempts=1
+
+    port-aware lists:
+        initial=2
+        remaining=0
+        verification attempts=1
+
+Rollback invariant:
+
+    rollback backups                    = 4 / 4
+    immediate previous backup equality = 4 / 4
+    previous profile                    = FAST
+
+Post-promotion:
+
+    controlled fixture          = 0
+    controlled lazy rule        = 0
+    stage                       = 0
+    production source equality  = 4 / 4
+
+Production HEALTH probe reached both configured external targets.
+
+Topology gate:
+
+    managed scripts             = 1 / 1 / 1 / 1
+    managed schedulers          = 1 / 1 / 1 / 1
+    managed schedulers enabled  = 4 / 4
+    fixed mangle                = 8 / 8
+    health fail-list            = 0
+    rollback backups            = 4 / 4
+    DEV3 holds                  = 4 / 4
+    stable safety copies        = 4 / 4
+    previous-source snapshots   = 0
+    stage                       = 0
+    controlled fixture          = 0
+    AWG                         = 1 / 1 / 1
+
+Result:
+
+    PASS
+
+### Step 2 — MIDDLE -> SLOW
+
+Desired source:
+
+    HEALTH  6148 / f912cdff44de2a8f
+    FAST    26098 / e005143cae6e3828
+    DETECT  41519 / 6165a9bf88ed2537
+    JUDGE   16840 / 25d83785b79b9661
+
+Promotion result:
+
+    SUCCESS
+
+Observed cleanup scan:
+
+    lazy rules:
+        initial=1
+        remaining=0
+        verification attempts=1
+
+    port-aware lists:
+        initial=3
+        remaining=0
+        verification attempts=1
+
+Rollback invariant:
+
+    rollback backups                    = 4 / 4
+    immediate previous backup equality = 4 / 4
+    previous profile                    = MIDDLE
+
+Post-promotion:
+
+    controlled fixture          = 0
+    controlled lazy rule        = 0
+    stage                       = 0
+    production source equality  = 4 / 4
+
+Production HEALTH and topology gate:
+
+    fixed mangle       = 8 / 8
+    health fail-list   = 0
+    AWG                = 1 / 1 / 1
+
+Result:
+
+    PASS
+
+### Step 3 — SLOW -> FAST
+
+Desired source:
+
+    HEALTH  6148 / cafdf828c49d2946
+    FAST    26098 / 0c9672d93a6a4e85
+    DETECT  41519 / 0ee9c8e6708bc6e8
+    JUDGE   16840 / 72733543f4561160
+
+Promotion result:
+
+    SUCCESS
+
+Observed cleanup scan:
+
+    lazy rules:
+        initial=1
+        remaining=0
+        verification attempts=1
+
+    port-aware lists:
+        initial=6
+        remaining=0
+        verification attempts=1
+
+Rollback invariant:
+
+    rollback backups                    = 4 / 4
+    immediate previous backup equality = 4 / 4
+    previous profile                    = SLOW
+
+Post-promotion:
+
+    controlled fixture          = 0
+    controlled lazy rule        = 0
+    stage                       = 0
+    production source equality  = 4 / 4
+
+Production HEALTH and topology gate:
+
+    fixed mangle       = 8 / 8
+    health fail-list   = 0
+    AWG                = 1 / 1 / 1
+
+Result:
+
+    PASS
+
+### Step 4 — FAST -> MIDDLE
+
+Desired source:
+
+    HEALTH  6150 / fe1c4593467d5283
+    FAST    26100 / a6df6efc895000b4
+    DETECT  41521 / c31920dc5302d7db
+    JUDGE   16842 / 6654d7bbb164e505
+
+Promotion result:
+
+    SUCCESS
+
+Observed cleanup scan:
+
+    lazy rules:
+        initial=1
+        remaining=0
+        verification attempts=1
+
+    port-aware lists:
+        initial=1
+        remaining=0
+        verification attempts=1
+
+Rollback invariant:
+
+    rollback backups                    = 4 / 4
+    immediate previous backup equality = 4 / 4
+    previous profile                    = FAST
+
+Post-promotion:
+
+    controlled fixture          = 0
+    controlled lazy rule        = 0
+    stage                       = 0
+    production source equality  = 4 / 4
+
+Production HEALTH and topology gate:
+
+    fixed mangle       = 8 / 8
+    health fail-list   = 0
+    AWG                = 1 / 1 / 1
+
+Result:
+
+    PASS
+
+### Bounded-sequence conclusion
+
+Complete sequence:
+
+    FAST -> MIDDLE -> SLOW -> FAST -> MIDDLE
+
+Result:
+
+    PASS
+
+Accepted transitions:
+
+    4 / 4
+
+After every transition:
+
+    exact desired production                  = PASS
+    immediate previous rollback source        = PASS
+    managed production scripts                = exactly 4
+    managed schedulers                        = exactly 4
+    managed schedulers enabled                = 4 / 4
+    rollback backup objects                   = exactly 4
+    controlled incompatible previous runtime  = 0
+    stale stage objects                       = 0
+    false HEALTH fail-list                    = 0
+    fixed AUTO-AWG mangle                     = 8 / 8
+    AWG infrastructure                        = unchanged
+
+### Reference recovery
+
+Managed schedulers were paused and jobs reached:
+
+    jobs-idle=true
+
+Exact stable v0.11.5 production was restored:
+
+    HEALTH  4186
+    FAST    4041
+    DETECT  8075
+    JUDGE   6122
+
+Final M6 V2 gates:
+
+    production sources       = 4186 / 4041 / 8075 / 6122
+    schedulers               = 4 / 4
+    fixed mangle             = 8 / 8
+    AWG                      = 1 / 1 / 1
+    accepted DEV3 stage      = 4
+    DEV3 holds               = 0
+    previous snapshots       = 0
+    controlled fixture       = 0
+    port-aware runtime       = 0
+    lazy runtime             = 0
+    health fail-list         = 0
+    completed M6 steps       = 4 / 4
+    rollback backups         = 0
+    E2E safety copies        = 0
+    temporary M6 V2 harness  = 0
+
+Accepted DEV3 inert stage was restored exactly:
+
+    HEALTH  5776
+    FAST    26100
+    DETECT  41521
+    JUDGE   16842
+
+### Controller end-state
+
+A separate read-only post-test gate confirmed:
+
+    stable v0.11.5 = RUNNING
+    ca8f422        = STOPPED
+    490eb83        = STOPPED
+
+It also independently confirmed:
+
+    production source       = 4186 / 4041 / 8075 / 6122
+    AWG                     = 1 / 1 / 1
+    accepted stage objects  = 4
+    DEV3 holds              = 0
+    rollback backups        = 0
+    E2E safety copies       = 0
+    M6 previous snapshots   = 0
+    lazy rules              = 0
+    health fail-list        = 0
+    temporary harness       = 0
+
+The follow-up read-only command was pasted as separate terminal commands, so
+its `:local sched` and `:local fixed` variables did not persist between
+commands.  Those two aggregate print lines are therefore not evidence either
+way.  The authoritative M6 V2 harness had already verified:
+
+    schedulers = 4 / 4
+    fixed      = 8 / 8
+
+before returning PASS.
+
+### M6 conclusion
+
+M6 is accepted.
+
+The replacement DEV4 candidate survives repeated profile switching without
+accumulating managed objects, stale stage state, incompatible controlled
+runtime, or rollback generations.
+
+Every rollback set represented the exact immediately previous production
+source.
+
+The RouterOS 7.23.3 HEALTH fix remained healthy across every repeated
+transition and retained the original fail-open safety gate.
+
+The executable candidate remains:
+
+    490eb839cb42551707b6640bd20f7a5d29484f5b
+
 Next migration acceptance case:
 
-    M6 — profile-switch repetition
+    M7 — live conntrack churn
