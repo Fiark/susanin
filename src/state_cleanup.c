@@ -335,6 +335,7 @@ static int cleanup_matching(
     value_match_fn match,
     const char *pattern,
     const char *label,
+    int retry_scan_errors,
     unsigned *removed
 ) {
     const char *what =
@@ -343,26 +344,68 @@ static int cleanup_matching(
             : "adaptive-state";
 
     id_vec_t before;
+    unsigned inspect_attempt = 0;
 
-    if (
-        collect_ids(
-            ros,
-            print_cmd,
-            proplist,
-            query,
-            attr,
-            match,
-            pattern,
-            &before
-        ) < 0
-    ) {
+    /*
+     * The RouterOS connection-tracking table is live even while Susanin
+     * schedulers are paused. A connection may disappear while RouterOS is
+     * serializing /ip/firewall/connection/print and RouterOS 7.23.3 can then
+     * answer that print itself with a transient "no such item" trap.
+     *
+     * Only callers that explicitly opt in get scan retries. Static managed
+     * state keeps the original fail-fast behaviour.
+     */
+    for (;;) {
+        inspect_attempt++;
+
+        if (
+            collect_ids(
+                ros,
+                print_cmd,
+                proplist,
+                query,
+                attr,
+                match,
+                pattern,
+                &before
+            ) == 0
+        ) {
+            break;
+        }
+
+        if (
+            !retry_scan_errors ||
+            inspect_attempt >= 20
+        ) {
+            fprintf(
+                stderr,
+                "Susanin state cleanup: inspect failed for %s attempt=%u.\n",
+                what,
+                inspect_attempt
+            );
+
+            return -1;
+        }
+
         fprintf(
             stderr,
-            "Susanin state cleanup: inspect failed for %s.\n",
-            what
+            "Susanin state cleanup: transient inspect scan failed for %s "
+            "attempt=%u; retrying.\n",
+            what,
+            inspect_attempt
         );
 
-        return -1;
+        sleep_ms(
+            100
+        );
+    }
+
+    if (inspect_attempt > 1) {
+        printf(
+            "  CLEAN %-28s SCAN-PASS phase=inspect attempts=%u\n",
+            what,
+            inspect_attempt
+        );
     }
 
     size_t initial =
@@ -433,6 +476,21 @@ static int cleanup_matching(
                 &after
             ) < 0
         ) {
+            if (
+                retry_scan_errors &&
+                attempt < 20
+            ) {
+                fprintf(
+                    stderr,
+                    "Susanin state cleanup: transient verify scan failed for %s "
+                    "attempt=%u; retrying.\n",
+                    what,
+                    attempt
+                );
+
+                continue;
+            }
+
             fprintf(
                 stderr,
                 "Susanin state cleanup: verify failed for %s attempt=%u.\n",
@@ -575,6 +633,7 @@ static int cleanup_legacy_lists(
         match_legacy_list,
         NULL,
         "legacy-ip-only-lists",
+        0,
         removed
     );
 }
@@ -589,6 +648,10 @@ static int cleanup_marked_connections(
      *
      * Do not use ?connection-mark=... here. Read only .id and
      * connection-mark, then select Susanin marks client-side.
+     *
+     * This is also the only cleanup path that enables transient scan-error
+     * retries: RouterOS 7.23.3 can return "no such item" from the connection
+     * print itself when a live conntrack entry disappears during serialization.
      * This path runs only during promotion/rollback, never continuously.
      */
     return cleanup_matching(
@@ -601,6 +664,7 @@ static int cleanup_marked_connections(
         match_adaptive_connection_mark,
         NULL,
         "adaptive-connection-marks",
+        1,
         removed
     );
 }
@@ -619,6 +683,7 @@ static int cleanup_port_lists(
         match_dev2_port_list,
         NULL,
         "dev2-port-lists",
+        0,
         removed
     );
 }
@@ -637,6 +702,7 @@ static int cleanup_lazy_rules(
         match_prefix,
         "AUTO-AWG: P ",
         "dev2-lazy-rules",
+        0,
         removed
     );
 }
