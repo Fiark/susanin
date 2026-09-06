@@ -907,6 +907,265 @@ With M4 complete, the basic migration transition matrix is now accepted:
     MIDDLE  -> SLOW
     SLOW    -> FAST
 
+## M5 — same-profile re-promotion
+
+Result:
+
+    PASS
+
+M5 was executed on MikroTik RouterOS 7.23.3 / ARM64 using the same DEV4
+executable:
+
+    ca8f422bc005b2f5702c036ad18bf3758ea114b8
+
+The test exercised:
+
+    v0.11.5 -> FAST -> FAST -> reference v0.11.5
+
+The second promotion used the exact same generated FAST source already
+installed in production.
+
+### Reference -> FAST setup
+
+Exact FAST desired source:
+
+    HEALTH  bytes=5774   fnv1a64=8abd7d7256f0be6a
+    FAST    bytes=26098  fnv1a64=0c9672d93a6a4e85
+    DETECT  bytes=41519  fnv1a64=0ee9c8e6708bc6e8
+    JUDGE   bytes=16840  fnv1a64=72733543f4561160
+
+The first promotion completed successfully.
+
+Exact resulting production source:
+
+    5774 / 26098 / 41519 / 16840
+
+The first promotion created exactly four rollback backups.
+
+Their source was the exact previous stable v0.11.5 production:
+
+    4186 / 4041 / 8075 / 6122
+
+No stage objects remained after the first successful promotion.
+
+The setup cleanup also encountered one transient RouterOS 7.23.3:
+
+    no such item (4)
+
+while clearing live adaptive connection marks.
+
+The bounded cleanup converged successfully:
+
+    adaptive marks:
+        initial=2
+        remaining=0
+        verification attempts=5
+
+### Exact same-profile precondition
+
+A fresh FAST stage was generated while production was already FAST.
+
+Every production source was compared directly against its desired staged
+source.
+
+Result:
+
+    same-profile source equality before promotion = 4 / 4
+
+Therefore the second promotion was a genuine exact-source FAST -> FAST
+re-promotion rather than another profile transition.
+
+### Controlled runtime before re-promotion
+
+Four controlled tuple-aware FAST entries were created for tcp/54400:
+
+    WATCH
+    TEST
+    OK
+    COOLDOWN
+
+Initial fixture count:
+
+    4
+
+Two controlled lazy rules were created:
+
+    AUTO-AWG: P tcp 54400 OK
+    AUTO-AWG: P tcp 54400 TEST
+
+Initial lazy-rule count:
+
+    2
+
+Same-profile promotion is allowed to conservatively forget this adaptive
+runtime.
+
+### FAST -> FAST re-promotion
+
+The second `promote` completed successfully.
+
+Observed compatibility cleanup:
+
+    dev2 lazy rules:
+        initial=2
+        remaining=0
+        verification attempts=1
+
+    dev2 port/profile lists:
+        initial=2
+        remaining=0
+        verification attempts=1
+
+    legacy IP-only lists:
+        initial=0
+        remaining=0
+
+    adaptive connection marks:
+        initial=0
+        remaining=0
+
+Four tuple entries were created initially. Two matching tuple entries
+remained live at the product cleanup scan. The authoritative post-condition
+after promotion was complete absence of the controlled runtime.
+
+Post-condition:
+
+    controlled tuple fixture = 0
+    controlled lazy rules    = 0
+    standard stage objects   = 0
+
+### Backup idempotence
+
+After the first promotion:
+
+    rollback backup objects = 4
+
+After the second promotion:
+
+    rollback backup objects = 4
+
+The exact backup names remained:
+
+    susanin-backup-health
+    susanin-backup-fast
+    susanin-backup-detect
+    susanin-backup-judge
+
+No additional backup objects accumulated.
+
+The second promotion replaced the rollback set with the immediately previous
+production source, which was FAST.
+
+Exact replacement backup fingerprints:
+
+    HEALTH  8abd7d7256f0be6a
+    FAST    0c9672d93a6a4e85
+    DETECT  0ee9c8e6708bc6e8
+    JUDGE   72733543f4561160
+
+Result:
+
+    rollback backup profile = FAST
+
+This proves that rollback state tracks the immediately previous production
+rather than preserving or accumulating older backup generations.
+
+### Managed topology after second promotion
+
+Exact topology:
+
+    managed production scripts     = 4 / 4
+    managed production schedulers  = 4 / 4
+    managed schedulers enabled     = 4 / 4
+    rollback backup objects        = 4
+    stale standard stage objects   = 0
+
+Independent AWG topology:
+
+    wg-awg-proxy                       = 1
+    r_to_awg                           = 1
+    AWG selected traffic masquerade    = 1
+
+Result:
+
+    unchanged
+
+No managed script or scheduler was duplicated.
+
+### Exact production verification
+
+After the second promotion a fresh FAST stage was generated.
+
+All four production sources were compared directly against the newly
+generated desired source.
+
+Result:
+
+    same-profile source equality after promotion = 4 / 4
+
+The verification stage was then removed successfully.
+
+Therefore same-profile promotion did not alter the desired FAST source.
+
+### Reference-router recovery
+
+Managed schedulers were paused and managed script jobs reached:
+
+    jobs-idle=true
+
+Exact stable v0.11.5 sources were restored:
+
+    HEALTH  4186
+    FAST    4041
+    DETECT  8075
+    JUDGE   6122
+
+Final reference-router gates:
+
+    production sources = 4186 / 4041 / 8075 / 6122
+    schedulers          = 4 / 4
+    fixed mangle        = 8 / 8
+    AWG                 = 1 / 1 / 1
+
+Final adaptive/lifecycle residue:
+
+    port-aware state = 0
+    lazy rules       = 0
+    DEV3 stage holds = 0
+    rollback backups = 0
+    E2E safety copies= 0
+
+Accepted DEV3 MIDDLE inert stage restored:
+
+    HEALTH  5776
+    FAST    26100
+    DETECT  41521
+    JUDGE   16842
+
+Temporary RouterOS M5 harness:
+
+    removed
+
+### M5 conclusion
+
+M5 is accepted.
+
+Promoting exact same-profile FAST sources again is safe and conservative.
+
+It does not:
+
+- duplicate managed production scripts;
+- duplicate managed schedulers;
+- accumulate rollback backup objects;
+- preserve stale stage objects;
+- alter independent AWG infrastructure.
+
+The rollback set is replaced with exactly four backups representing the
+immediately previous FAST production.
+
+Controlled adaptive runtime is conservatively cleared, and production remains
+byte-for-byte equal to the desired FAST source after re-promotion.
+
 Next migration acceptance case:
 
-    M5 — same-profile re-promotion
+    M6 — profile-switch repetition
