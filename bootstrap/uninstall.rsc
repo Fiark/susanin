@@ -10,23 +10,22 @@
 /system scheduler remove [find where name="auto-awg-detect"]
 /system scheduler remove [find where name="auto-awg-judge"]
 
-# Remove managed and safety mangle rules.
+# Remove Susanin-managed adaptive and VPN Direct mangle rules.
 /ip firewall mangle remove [find where comment~"^AUTO-AWG:"]
 /ip firewall mangle remove [find where comment~"^SUSANIN: safety bypass"]
+/ip firewall mangle remove [find where comment="SUSANIN: VPN Direct bypass"]
 
 # Remove NAT only when Susanin created it.
 /ip firewall nat remove [find where comment="SUSANIN: masquerade selected tunnel"]
 
-# Remove temporary learned state.
-/ip firewall address-list remove [find where list="auto_awg_watch_tcp"]
-/ip firewall address-list remove [find where list="auto_awg_test_tcp"]
-/ip firewall address-list remove [find where list="auto_awg_ok_tcp"]
-/ip firewall address-list remove [find where list="auto_awg_cooldown_tcp"]
-/ip firewall address-list remove [find where list="auto_awg_watch_udp"]
-/ip firewall address-list remove [find where list="auto_awg_test_udp"]
-/ip firewall address-list remove [find where list="auto_awg_ok_udp"]
-/ip firewall address-list remove [find where list="auto_awg_cooldown_udp"]
-/ip firewall address-list remove [find where list="auto_awg_health_fail"]
+# Remove all Susanin-owned transient/evidence state.
+# The auto_awg_ namespace includes legacy lists and v0.12 port-aware
+# watch/test/ok/cooldown/direct1/awg1/recheck/health state.
+/ip firewall address-list remove [find where list~"^auto_awg_"]
+
+# Remove persistent VPN Direct RouterOS state.
+/ip firewall address-list remove [find where list="vpn_direct"]
+/ip dns static remove [find where comment~"^SUSANIN: VPN Direct domain "]
 
 # Remove current managed connections if present.
 /ip firewall connection remove [find where connection-mark="auto-awg-test-conn"]
