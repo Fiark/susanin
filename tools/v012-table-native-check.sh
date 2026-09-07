@@ -7,33 +7,34 @@ HEALTH="templates/health.rsc.tmpl"
 
 PING_TABLE_COUNT="$(
     grep -Fc \
-        'routing-table="{{ROUTING_TABLE}}"' \
+        'routing-table=' \
         "$HEALTH" ||
         true
 )"
 
-echo "HEALTH table-bound probes=$PING_TABLE_COUNT"
+HEALTH_INTERFACE_PROBES="$(
+    grep -Fc \
+        'interface="{{EGRESS_INTERFACE}}" src-address=$awgIP count=1' \
+        "$HEALTH" ||
+        true
+)"
 
-if [[ "$PING_TABLE_COUNT" != "2" ]]; then
-    echo "ERROR: HEALTH must have exactly two table-bound probes"
+echo "HEALTH routing-table probes=$PING_TABLE_COUNT"
+echo "HEALTH interface/src-address probes=$HEALTH_INTERFACE_PROBES"
+
+if [[ "$PING_TABLE_COUNT" != "0" ]]; then
+    echo "ERROR: RouterOS 7.23.3 HEALTH must not use /ping routing-table="
     exit 1
 fi
 
-if grep -Fq \
-    '{{EGRESS_INTERFACE}}' \
+if [[ "$HEALTH_INTERFACE_PROBES" != "2" ]]; then
+    echo "ERROR: HEALTH must have exactly two interface/src-address probes"
+    exit 1
+fi
+
+grep -Fq \
+    ':local awgAddrIds [/ip address find where interface="{{EGRESS_INTERFACE}}"]' \
     "$HEALTH"
-then
-    echo "ERROR: HEALTH still depends on EGRESS_INTERFACE"
-    exit 1
-fi
-
-if grep -Fq \
-    'src-address=$awgIP' \
-    "$HEALTH"
-then
-    echo "ERROR: legacy interface-address HEALTH returned"
-    exit 1
-fi
 
 grep -Fq \
     'cfg->target_mode == SUSANIN_TARGET_ROUTING_TABLE' \
@@ -73,8 +74,8 @@ then
     exit 1
 fi
 
-echo "PASS: HEALTH is routing-table native"
-echo "PASS: table target does not require one egress interface"
+echo "PASS: HEALTH uses RouterOS 7.23.3 compatible interface/src-address probes"
+echo "PASS: adaptive routing remains table-native; HEALTH resolves concrete egress for probing"
 echo "PASS: table mode leaves NAT ownership to routing design"
 echo "PASS: setup supports interface/table choice"
 echo "PASS: setup enforces strict IPv4-only RouterOS mode"

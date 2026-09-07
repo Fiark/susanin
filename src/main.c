@@ -15,6 +15,7 @@
 #include "setup.h"
 #include "target.h"
 #include "install.h"
+#include "gc.h"
 #include "version.h"
 
 #include <stdio.h>
@@ -75,6 +76,7 @@ static void usage(
         "  susanin diag errors\n"
         "\n"
         "Runtime:\n"
+        "  susanin gc\n"
         "  susanin daemon\n"
         "  susanin version\n",
         SUSANIN_VERSION
@@ -114,6 +116,7 @@ int main(
     int setup = 0;
     int install_dry = 0;
     int install = 0;
+    int gc_cmd = 0;
     int daemon = 0;
 
     int config_show = 0;
@@ -475,6 +478,14 @@ int main(
         argc == 2 &&
         strcmp(
             argv[1],
+            "gc"
+        ) == 0
+    ) {
+        gc_cmd = 1;
+    } else if (
+        argc == 2 &&
+        strcmp(
+            argv[1],
             "daemon"
         ) == 0
     ) {
@@ -522,8 +533,16 @@ int main(
 
         fflush(stdout);
 
+        printf(
+            "Bounded runtime GC interval: %u seconds.\n",
+            SUSANIN_GC_INTERVAL_SECONDS
+        );
+
+        fflush(stdout);
+
         for (;;) {
-            sleep(3600);
+            sleep(SUSANIN_GC_INTERVAL_SECONDS);
+            (void)susanin_gc_daemon_tick();
         }
     }
 
@@ -707,7 +726,53 @@ int main(
         "Authenticated.\n\n"
     );
 
-    int rc;
+    int rc = 0;
+    int runtime_lock_fd = -1;
+
+    int runtime_lock_required =
+        stage ||
+        stage_clean ||
+        promote ||
+        rollback ||
+        setup ||
+        install ||
+        gc_cmd;
+
+    if (runtime_lock_required) {
+        int lock_rc =
+            susanin_runtime_lock_try(
+                &runtime_lock_fd
+            );
+
+        if (lock_rc > 0) {
+            if (gc_cmd) {
+                printf(
+                    "GC result: SKIP — another Susanin lifecycle operation is active.\n"
+                );
+
+                rc = 0;
+            } else {
+                fprintf(
+                    stderr,
+                    "Susanin lifecycle operation blocked: another runtime-mutating operation is active. Retry shortly.\n"
+                );
+
+                rc = 1;
+            }
+
+            goto command_done;
+        }
+
+        if (lock_rc < 0) {
+            fprintf(
+                stderr,
+                "Susanin lifecycle operation blocked: runtime lock unavailable.\n"
+            );
+
+            rc = 1;
+            goto command_done;
+        }
+    }
 
     if (diag_errors_cmd) {
         rc =
@@ -850,6 +915,16 @@ int main(
             rollback_run(
                 &ros
             );
+    } else if (gc_cmd) {
+        susanin_gc_stats_t gc_stats;
+
+        rc =
+            susanin_gc_run_once(
+                &ros,
+                &cfg,
+                &gc_stats,
+                1
+            );
     } else if (status) {
         rc =
             status_run(
@@ -865,9 +940,16 @@ int main(
             );
     }
 
+command_done:
     ros_close(
         &ros
     );
+
+    if (runtime_lock_fd >= 0) {
+        susanin_runtime_lock_release(
+            runtime_lock_fd
+        );
+    }
 
     {
         char event_message[256];
