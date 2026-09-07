@@ -26,6 +26,7 @@
 #define GC_MAX_LAZY           128U
 #define GC_MAX_MARKS          128U
 #define GC_MARK_SCAN_RETRIES  3U
+#define GC_MARK_VERIFY_RETRIES 20U
 
 _Static_assert(
     GC_LAZY_TEST_BUDGET +
@@ -1817,7 +1818,7 @@ static int verify_mark_ids_absent(
 {
     for (
         unsigned attempt = 1;
-        attempt <= GC_MARK_SCAN_RETRIES;
+        attempt <= GC_MARK_VERIFY_RETRIES;
         ++attempt
     ) {
         int rc =
@@ -1832,12 +1833,12 @@ static int verify_mark_ids_absent(
 
         if (
             rc > 0 &&
-            attempt == GC_MARK_SCAN_RETRIES
+            attempt == GC_MARK_VERIFY_RETRIES
         ) {
             return -1;
         }
 
-        if (attempt < GC_MARK_SCAN_RETRIES) {
+        if (attempt < GC_MARK_VERIFY_RETRIES) {
             sleep_ms(100);
         }
     }
