@@ -748,6 +748,12 @@ static int first_auto_cb(
             "comment"
         );
 
+    const char *chain =
+        ros_get_attr(
+            s,
+            "chain"
+        );
+
     const char *id =
         ros_get_attr(
             s,
@@ -755,13 +761,25 @@ static int first_auto_cb(
         );
 
     if (
+        chain &&
+        strcmp(
+            chain,
+            "prerouting"
+        ) == 0 &&
         comment &&
         id &&
-        strncmp(
-            comment,
-            "AUTO-AWG:",
-            9
-        ) == 0
+        (
+            strncmp(
+                comment,
+                "AUTO-AWG:",
+                9
+            ) == 0 ||
+            strncmp(
+                comment,
+                "SUSANIN:",
+                8
+            ) == 0
+        )
     ) {
         ctx->found = 1;
 
@@ -780,6 +798,19 @@ static int add_bypass_rule(
     ros_client_t *ros,
     const app_config_t *cfg
 ) {
+    if (
+        !cfg ||
+        !cfg->routing_table ||
+        !*cfg->routing_table
+    ) {
+        fprintf(
+            stderr,
+            "VPN Direct: routing target table is not configured.\n"
+        );
+
+        return -1;
+    }
+
     first_auto_t first;
 
     memset(
@@ -790,7 +821,7 @@ static int add_bypass_rule(
 
     const char *scan[] = {
         "/ip/firewall/mangle/print",
-        "=.proplist=.id,comment"
+        "=.proplist=.id,comment,chain"
     };
 
     if (
@@ -816,6 +847,15 @@ static int add_bypass_rule(
             : "LAN"
     );
 
+    char wroute[192];
+
+    snprintf(
+        wroute,
+        sizeof(wroute),
+        "=new-routing-mark=%s",
+        cfg->routing_table
+    );
+
     char place[96];
 
     const char *cmd[12];
@@ -828,13 +868,21 @@ static int add_bypass_rule(
         "=chain=prerouting";
 
     cmd[n++] =
-        "=action=accept";
+        "=action=mark-routing";
 
     cmd[n++] = wlan;
 
     cmd[n++] =
         "=dst-address-list="
         DIRECT_LIST;
+
+    cmd[n++] = wroute;
+
+    cmd[n++] =
+        "=passthrough=no";
+
+    cmd[n++] =
+        "=dst-address-type=!local";
 
     cmd[n++] =
         "=comment=SUSANIN: VPN Direct bypass";
