@@ -1844,3 +1844,428 @@ The executable candidate remains:
 Next migration acceptance case:
 
     M7 — live conntrack churn
+
+## M7 — live conntrack churn acceptance
+
+Result:
+
+    PASS
+
+M7 was completed on the RouterOS 7.23.3 / ARM64 reference router using the
+replacement DEV4 executable:
+
+    490eb839cb42551707b6640bd20f7a5d29484f5b
+
+The acceptance evidence combines the successful product migration under live
+conntrack churn with later controlled fixture and API-race verification.
+
+### Controlled live TEST/OK fixture
+
+Temporary prerouting rules generated real short-lived connections from the
+isolated DEV4 controller address:
+
+    source      = 172.31.254.2
+    destination = 1.1.1.1
+    tcp/80      -> auto-awg-test-conn
+    tcp/443     -> auto-awg-ok-conn
+
+A verified interleaved fixture run observed:
+
+    TEST rule packets = 20
+    OK rule packets   = 48
+
+Simultaneously visible controlled connection marks:
+
+    TEST = 10
+    OK   = 26
+
+Therefore both adaptive connection-mark classes were physically present at
+the same time.
+
+### Actual promotion under live churn
+
+A real FAST -> MIDDLE promotion was executed while the adaptive conntrack
+table was changing.
+
+Observed at the migration boundary:
+
+    adaptive marks at promote start = 42
+
+During product cleanup:
+
+    adaptive connection marks initial = 29
+    remaining                         = 0
+    verification attempts             = 1
+
+Promotion result:
+
+    SUCCESS
+
+The desired MIDDLE source was installed transactionally and the cleanup
+post-condition reached zero incompatible adaptive connection marks.
+
+Temporary RouterOS worker/harness completion state was not used as a product
+acceptance condition. Several harness iterations exposed RouterOS scripting
+and test-fixture issues, but no product post-condition identified a Susanin
+migration failure.
+
+### RouterOS API race evidence
+
+A later exact FAST -> MIDDLE promotion in the same acceptance sequence
+encountered the RouterOS 7.23.3 live-conntrack race:
+
+    RouterOS API error: no such item (4)
+
+The bounded cleanup still converged:
+
+    adaptive connection marks initial = 1
+    remaining                         = 0
+    verification attempts             = 5
+
+API framing remained synchronized and the promotion completed successfully.
+
+### M7 conclusion
+
+M7 is accepted.
+
+The tested implementation:
+
+- tolerates short-lived adaptive conntrack churn;
+- tolerates the known RouterOS 7.23.3 `no such item` race;
+- uses bounded cleanup retries;
+- reaches the authoritative zero incompatible-mark post-condition;
+- completes promotion transactionally.
+
+No M7 harness objects remained after recovery.
+
+## M8 — stage mismatch preflight
+
+Result:
+
+    PASS
+
+M8 deliberately replaced only the staged HEALTH source with an intentional
+mismatch.
+
+Corrupted staged HEALTH:
+
+    bytes = 57
+    fp    = 12201b66314c1ca7
+
+Generated desired MIDDLE HEALTH:
+
+    bytes = 6150
+    fp    = fe1c4593467d5283
+
+The product stopped in the stage preflight:
+
+    BLOCK stage mismatch: susanin-stage-health
+    Promotion blocked: stage is absent or does not match generated desired source.
+
+### No write-side effects
+
+Production remained exact FAST:
+
+    6148 / 26098 / 41519 / 16840
+
+Existing rollback backups remained unchanged:
+
+    4186 / 4041 / 8075 / 6122
+
+Managed scheduler state remained:
+
+    4 / 4 enabled
+
+A controlled legacy runtime sentinel was present before promote:
+
+    list    = auto_awg_test_tcp
+    address = 198.18.0.8
+
+After the blocked promotion:
+
+    sentinel = 1
+
+Therefore adaptive runtime cleanup did not execute.
+
+Independent AWG topology remained:
+
+    wg-awg-proxy                    = 1
+    r_to_awg                        = 1
+    AWG selected traffic masquerade = 1
+
+### M8 conclusion
+
+M8 is accepted.
+
+An incorrect staged source blocks promotion before:
+
+- production source mutation;
+- rollback-backup replacement;
+- managed scheduler mutation;
+- adaptive runtime cleanup.
+
+## M9 — rollback after successful promotion
+
+Result:
+
+    PASS
+
+M9 began with exact DEV4 FAST production:
+
+    HEALTH  6148 / cafdf828c49d2946
+    FAST    26098 / 0c9672d93a6a4e85
+    DETECT  41519 / 0ee9c8e6708bc6e8
+    JUDGE   16840 / 72733543f4561160
+
+Exact MIDDLE desired source:
+
+    HEALTH  6150 / fe1c4593467d5283
+    FAST    26100 / a6df6efc895000b4
+    DETECT  41521 / c31920dc5302d7db
+    JUDGE   16842 / 6654d7bbb164e505
+
+### FAST -> MIDDLE promotion
+
+Promotion result:
+
+    SUCCESS
+
+Observed migration cleanup included:
+
+    lazy rules:
+        initial=8
+        remaining=0
+
+    port/profile state:
+        initial=30
+        remaining=0
+
+    adaptive connection marks:
+        initial=1
+        remaining=0
+        verification attempts=5
+
+The adaptive connection cleanup encountered:
+
+    RouterOS API error: no such item (4)
+
+and still converged successfully.
+
+After promotion:
+
+    production = 6150 / 26100 / 41521 / 16842
+    stage      = 0
+
+The four persistent rollback backups contained the exact immediate previous
+FAST source:
+
+    6148 / 26098 / 41519 / 16840
+
+They were also compared against independent pre-promotion source snapshots:
+
+    source equality = 4 / 4
+
+### Controlled rollback runtime
+
+Before rollback a controlled tuple-aware sentinel was added:
+
+    list    = auto_awg_test_tcp_443
+    address = 198.18.0.9
+
+Rollback cleanup observed:
+
+    lazy rules:
+        initial=2
+        remaining=0
+
+    port/profile state:
+        initial=4
+        remaining=0
+
+    adaptive connection marks:
+        initial=1
+        remaining=0
+
+### Product rollback
+
+Product output:
+
+    Rollback result: SUCCESS
+    Adaptive runtime state reset: YES
+    Scheduler states restored: YES
+
+Exact restored FAST fingerprints:
+
+    HEALTH  6148 / cafdf828c49d2946
+    FAST    26098 / 0c9672d93a6a4e85
+    DETECT  41519 / 0ee9c8e6708bc6e8
+    JUDGE   16840 / 72733543f4561160
+
+Direct comparison with the independent FAST snapshots:
+
+    HEALTH = true
+    FAST   = true
+    DETECT = true
+    JUDGE  = true
+
+Controlled sentinel after rollback:
+
+    0
+
+Managed schedulers:
+
+    4 / 4 enabled
+
+Independent AWG:
+
+    1 / 1 / 1
+
+### M9 conclusion
+
+M9 is accepted.
+
+Rollback:
+
+- pauses managed schedulers;
+- clears current adaptive runtime;
+- restores the exact immediately previous production sources;
+- restores scheduler state;
+- leaves independent AWG infrastructure untouched.
+
+## M10 — cleanup failure / unverifiable post-condition
+
+Result:
+
+    PASS
+
+M10 intentionally forced a cleanup post-condition that could not converge.
+
+A bounded background fault injector maintained one controlled port-aware
+entry:
+
+    list    = auto_awg_test_tcp_65535
+    address = 198.18.0.10
+    comment = SUSANIN M10 FAULT
+
+The injector was confirmed active before promotion and recreated the
+controlled state during cleanup.
+
+Total controlled additions during the test:
+
+    21
+
+### Expected cleanup failure
+
+Promotion first verified and installed the exact MIDDLE candidate.
+
+Runtime cleanup observed:
+
+    lazy rules:
+        initial=2
+        remaining=0
+
+    port/profile state:
+        initial=2
+
+The controlled injector prevented the required zero post-condition:
+
+    Susanin state cleanup: post-condition failed for dev2-port-lists remaining=1.
+
+The product then executed its failed-safe path:
+
+    FAIL adaptive-state compatibility cleanup
+    Source rollback=SUCCESS
+    adaptive-mangle-disable=SUCCESS
+    Managed schedulers remain PAUSED; manual inspection required.
+
+### Failed-safe post-condition
+
+After stopping the injector:
+
+    injector running = false
+    injector adds    = 21
+    controlled fault = 1
+
+Production was automatically restored to exact FAST:
+
+    6148 / 26098 / 41519 / 16840
+
+Rollback backups:
+
+    6148 / 26098 / 41519 / 16840
+
+Managed schedulers:
+
+    disabled = 4 / 4
+
+All eight fixed Susanin AUTO-AWG adaptive mangle rules:
+
+    disabled = 8 / 8
+
+Lazy rules:
+
+    0
+
+Independent AWG remained unchanged:
+
+    wg-awg-proxy                    = 1
+    r_to_awg                        = 1
+    AWG selected traffic masquerade = 1
+
+Therefore an unverifiable migration cleanup cannot resume adaptive routing as
+if migration had succeeded. The router is deliberately left fail-open to
+DIRECT and the failure is operator-visible.
+
+### M10 conclusion
+
+M10 is accepted.
+
+The controlled failure demonstrates the required safety invariant:
+
+    cleanup unverifiable
+    -> restore previous sources
+    -> disable adaptive mangle
+    -> keep schedulers paused
+    -> fail open to DIRECT
+
+Independent AWG ownership is preserved.
+
+## M1-M10 migration matrix conclusion
+
+Result:
+
+    PASS
+
+All mandatory DEV4 migration-hardening cases M1 through M10 are now accepted
+on the RouterOS 7.23.3 / ARM64 reference platform.
+
+The final post-test recovery restored the exact stable v0.11.5 reference:
+
+    production = 4186 / 4041 / 8075 / 6122
+    fixed mangle enabled = 8 / 8
+    managed schedulers enabled = 4 / 4
+    AWG = 1 / 1 / 1
+
+Accepted DEV3 inert MIDDLE stage was restored:
+
+    5776 / 26100 / 41521 / 16842
+
+Controller state after final recovery:
+
+    stable v0.11.5 = RUNNING
+    DEV3           = STOPPED
+    DEV4 490eb83   = STOPPED
+
+All temporary migration acceptance objects were removed:
+
+    rollback backups = 0
+    M7 snapshots     = 0
+    E2E safety copies= 0
+    M7 harness       = 0
+    M8 sentinel      = 0
+    M9 sentinel      = 0
+    M10 fault        = 0
+
+The remaining v0.12 release work is D4.2 bounded runtime garbage collection
+and its targeted post-change regression. The full M1-M10 matrix does not need
+to be repeated unless the GC implementation changes migration semantics.
