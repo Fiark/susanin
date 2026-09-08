@@ -1,5 +1,243 @@
 # Changelog
 
+## v0.12.0 — stable
+
+Stable release for the validated ARM64 / RouterOS 7.23.3 reference profile.
+
+v0.12.0 moves Susanin from the previous IP-oriented adaptive model to a
+port-aware routing architecture and adds explicit routing-target control.
+
+### Highlights
+
+- two routing target modes: **Interface** and **Routing table**;
+- native use of existing RouterOS routing tables;
+- routing-table targets may preserve recursive routing, ECMP and
+  multi-egress designs;
+- port-aware adaptive identity:
+  `protocol + destination IPv4 + destination port`;
+- lazy per-port AUTO-AWG mangle rules;
+- separate TCP and UDP learning;
+- accuracy profiles: `fast`, `middle`, `slow`;
+- persistent VPN Direct policy;
+- VPN Direct IPv4/CIDR support;
+- VPN Direct domain support through RouterOS DNS;
+- migration hardening from legacy v0.11.x IP-only state;
+- bounded runtime garbage collection;
+- strict IPv4-only operation;
+- controller/data-plane separation retained;
+- graceful SIGTERM/SIGINT controller shutdown.
+
+### VPN Direct
+
+VPN Direct means:
+
+> force the selected IP, CIDR or domain through the configured VPN routing
+> target without adaptive learning.
+
+The final implementation uses a RouterOS `mark-routing` rule with
+`passthrough=no`.
+
+VPN Direct is placed before Susanin safety/adaptive rules so the explicit
+operator policy has priority.
+
+Domain policies use RouterOS DNS static FWD entries with
+`match-subdomain=yes` and `address-list=vpn_direct`.
+
+Domain routing therefore depends on DNS visibility in RouterOS. Clients using
+external DoH, DoT, private DNS or hardcoded IP addresses may bypass domain
+population.
+
+TLS SNI inspection is not included in v0.12.0.
+
+### Routing-table target
+
+Susanin can use an existing routing table directly instead of reducing it to
+one selected output interface.
+
+The accepted reference configuration used:
+
+~~~text
+routing table:
+r_to_awg
+
+resolved egress:
+wg-awg-proxy
+~~~
+
+For routing-table targets Susanin does not create or own tunnel NAT
+automatically.
+
+### Port-aware adaptive state
+
+Adaptive state now distinguishes destinations by:
+
+~~~text
+protocol + destination IPv4 + destination port
+~~~
+
+For example, TCP/443 and UDP/443 to the same IP are independent states.
+
+Dynamic per-port mangle rules are created lazily and are not part of the
+fixed-rule reconciliation count.
+
+### Data plane
+
+Final reference production scripts:
+
+~~~text
+auto-awg-health   bytes=6148   fnv1a64=cafdf828c49d2946
+auto-awg-fast     bytes=26098  fnv1a64=0c9672d93a6a4e85
+auto-awg-detect   bytes=41519  fnv1a64=0ee9c8e6708bc6e8
+auto-awg-judge    bytes=16840  fnv1a64=72733543f4561160
+~~~
+
+Reference installed state:
+
+~~~text
+scripts=4
+schedulers=4
+fixed mangle=8
+safety bypass=3
+~~~
+
+Structural reconciliation:
+
+~~~text
+KEEP=16 CREATE=0 UPDATE=0 BLOCKERS=0
+Result: IN SYNC structurally.
+~~~
+
+### Migration and runtime cleanup
+
+v0.12.0 cleans incompatible legacy adaptive runtime state before starting the
+new port-aware data plane.
+
+Cleanup covers:
+
+- legacy IP-only lists;
+- old port-state objects;
+- stale lazy per-port rules;
+- adaptive connection marks.
+
+Runtime GC bounds Susanin-owned dynamic state.
+
+The accepted GC implementation remained unchanged during final release
+hardening.
+
+### Graceful controller shutdown
+
+The controller now handles SIGTERM and SIGINT explicitly.
+
+A normal RouterOS container stop exits cleanly instead of waiting for
+RouterOS to force PID 1 down with SIGKILL.
+
+The RouterOS adaptive data plane continues operating while the controller is
+stopped.
+
+### Uninstall behavior
+
+The final `uninstall.rsc` was tested against a complete installation.
+
+It removes Susanin-owned:
+
+- controller objects;
+- RouterOS scripts and schedulers;
+- adaptive mangle state;
+- safety rules;
+- VPN Direct state;
+- API machine account/rule;
+- persistent Susanin configuration and machine secret.
+
+It preserves independently managed VPN/routing infrastructure.
+
+The reference acceptance confirmed preservation of:
+
+~~~text
+wg-awg-proxy
+r_to_awg
+0.0.0.0/0 via wg-awg-proxy
+AWG selected traffic masquerade
+~~~
+
+RouterOS API state was also restored to its pre-Susanin state after full
+uninstall.
+
+### Final field acceptance
+
+Validated on:
+
+- RouterOS 7.23.3 stable;
+- ARM64;
+- real MikroTik hardware;
+- existing WireGuard/AmneziaWG routing path.
+
+Final acceptance includes:
+
+- ARM64 runtime;
+- credentialless bootstrap;
+- API authentication;
+- fresh setup;
+- table-native routing target;
+- generated-source validation `PASS=4 FAIL=0`;
+- structural reconciliation;
+- VPN Direct IPv4/CIDR forced routing;
+- VPN Direct domain forced routing;
+- VPN Direct priority;
+- graceful shutdown;
+- controller restart;
+- data-plane preservation;
+- complete uninstall;
+- independent VPN/routing/NAT preservation;
+- fresh reinstall from the exact same frozen assets.
+
+### Frozen release artifact
+
+Accepted runtime source:
+
+~~~text
+d53517dfd6daccb7073517661138d79c573cac46
+~~~
+
+Exact field-tested `susanin.tar`:
+
+~~~text
+size:
+4199936 bytes
+
+SHA256:
+81f982953e3b4d75c343b7729685938d7fc21105ea2df2393ca49117e0aadb2f
+
+RouterOS image-id:
+1200eeb2800f0e876580b61b63f14a4686c5338f9ead9979bc312ca93dac2e82
+~~~
+
+The stable release uses the frozen field-tested artifact and does not rebuild
+`susanin.tar` from the later documentation/release commit.
+
+### Stable scope
+
+Validated stable scope:
+
+- ARM64;
+- RouterOS 7.23.3;
+- IPv4;
+- interface-list `LAN`;
+- existing route-based VPN/tunnel;
+- WireGuard/AmneziaWG reference path.
+
+Not included in stable v0.12.0:
+
+- IPv6 adaptive routing;
+- TLS SNI inspection;
+- SNI-based verification.
+
+Detailed validation:
+
+- `docs/TESTED.md`;
+- `docs/RELEASE_NOTES_v0.12.0.md`;
+- `docs/RELEASE_INTEGRITY.md`.
+
+
 ## v0.12.0-dev1 — routing control-plane foundation
 
 ### v0.12.0-dev1 acceptance

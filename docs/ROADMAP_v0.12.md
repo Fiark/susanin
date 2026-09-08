@@ -1,128 +1,213 @@
-# Susanin v0.12 architecture
+# Susanin v0.12 — historical development roadmap
 
-Base: stable v0.11.5 data plane.
+> **Status: completed and archived.**
+>
+> This file records the development direction that led to stable v0.12.0.
+> It is not the authoritative description of the released feature set.
+>
+> For stable behavior see:
+>
+> - [../README.md](../README.md)
+> - [ARCHITECTURE.md](ARCHITECTURE.md)
+> - [USER_GUIDE.md](USER_GUIDE.md)
+> - [TESTED.md](TESTED.md)
+> - [RELEASE_NOTES_v0.12.0.md](RELEASE_NOTES_v0.12.0.md)
+
+## Starting point
+
+Development of v0.12 started from the stable v0.11.5 data plane.
+
+The main goals were:
+
+- routing-target abstraction;
+- IPv4-only enforcement;
+- VPN Direct;
+- port-aware adaptive state;
+- accuracy profiles;
+- migration hardening;
+- runtime garbage collection;
+- fail-open behavior;
+- long-running acceptance.
 
 ## Routing target
 
-Susanin supports two target modes:
+The v0.12 design introduced two user-facing target modes:
 
-- interface
-- routing-table
+~~~text
+interface
+routing-table
+~~~
 
-An interface target may reuse an existing routing table or provision a
-dedicated Susanin table.
+Stable v0.12.0 supports both.
 
-A routing-table target is used as-is and may internally use any gateway,
-interface, multipath path or policy-routing design.
+A routing-table target delegates forwarding policy to the selected RouterOS
+table.
 
-## IPv4 only
+The final accepted RouterOS 7.23.3 configuration also had a concrete resolved
+IPv4 egress for HEALTH probing.
 
-Susanin v0.12 is IPv4-only.
+## IPv4-only scope
 
-Controller RouterOS API sockets use AF_INET.
-An active IPv6 Internet default route is treated as an unmanaged bypass.
-Setup must either block on it or explicitly disable IPv6 in strict mode.
+v0.12.0 is intentionally IPv4-only.
+
+IPv6 adaptive routing is outside the stable v0.12.0 scope.
 
 ## VPN Direct
 
-VPN Direct is one user-visible persistent policy list.
+The original v0.12 work introduced a persistent policy for:
 
-Supported entries:
+- IPv4 addresses;
+- IPv4 CIDRs;
+- domains.
 
-- IPv4 address or CIDR
-- domain
+The **final stable semantics** are:
 
-VPN Direct has absolute priority over adaptive routing.
+> force matching traffic through the selected VPN routing target without
+> waiting for adaptive learning.
 
-Domain entries use RouterOS DNS FWD/address-list resolution.
-TCP TLS flows also use tls-host/SNI verification where observable.
+VPN Direct has priority over ordinary adaptive routing.
+
+Domain policy uses RouterOS-visible DNS to populate `vpn_direct`.
+
+External DoH, DoT, private DNS or hardcoded IP addresses may bypass domain
+population.
 
 ## Adaptive identity
 
-Adaptive state is keyed by:
+The final v0.12.0 adaptive identity is:
 
-    protocol + destination IPv4 + destination port
+~~~text
+protocol + destination IPv4 + destination port
+~~~
 
-Example:
+For example:
 
-    tcp / 203.0.113.10 / 443 -> AWG
-    tcp / 203.0.113.10 / 80  -> DIRECT
+~~~text
+tcp + 203.0.113.10 + 443
+udp + 203.0.113.10 + 443
+tcp + 203.0.113.10 + 8443
+~~~
 
-The same IP on different ports therefore learns independently.
+are independent states.
+
+## Port-aware runtime
+
+v0.12.0 introduced:
+
+- port-scoped adaptive state;
+- lazy per-port mangle rules;
+- cleanup of stale runtime state;
+- bounded runtime GC.
+
+Dynamic lazy rules are runtime state and are not treated as fixed structural
+drift.
 
 ## Accuracy profiles
 
-FAST:
-Current v0.11.5 behavior is the baseline.
-A strong DIRECT failure can immediately enter TEST.
-One healthy AWG test may confirm the tuple.
+The v0.12 development line introduced:
 
-MIDDLE:
-Require repeated independent DIRECT evidence.
-Require repeated healthy AWG evidence before confirmation.
+~~~text
+fast
+middle
+slow
+~~~
 
-SLOW:
-Maximum-confidence mode.
-Use repeated DIRECT failures, SNI-assisted verification when available,
-AWG success, a DIRECT re-check and a second AWG success before confirmation.
+These profiles control the tradeoff between reaction speed and the amount of
+evidence required by the adaptive decision process.
 
-No mode claims mathematical 100 percent certainty because remote service
-state, CDN changes, QUIC, ECH and unavailable/fragmented TLS SNI can prevent
-perfect observation.
+## Migration
 
-## SNI verification
+Moving from the v0.11.x IP-oriented state model to the v0.12.0 port-aware
+model required explicit migration handling.
 
-For a suspicious TCP/TLS tuple Susanin may:
+Transactional promotion clears incompatible adaptive runtime state before
+managed schedulers resume.
 
-1. find DNS-cache names currently mapped to the destination IPv4;
-2. create temporary tls-host observer rules scoped to the source client,
-   destination IPv4 and destination port;
-3. force a clean reconnect;
-4. identify the matching SNI by rule counters;
-5. remove all temporary observer rules.
+## Fail-open and lifecycle hardening
 
-SNI is an additional confidence signal, not a mandatory dependency.
+The final v0.12.0 work also included:
 
-## Port state
+- fail-open handling;
+- structural reconciliation;
+- staged promotion;
+- rollback;
+- runtime GC;
+- graceful SIGTERM/SIGINT controller shutdown;
+- preservation of the RouterOS data plane when the controller stops.
 
-Port-aware WATCH/TEST/OK/COOLDOWN state uses native RouterOS timeout
-semantics.
+## SNI research — not shipped
 
-Implementation should use per-protocol/per-port dynamic state lists and
-lazily managed mangle rules, with garbage collection of unused port rules.
+During development, SNI-assisted verification was considered as an additional
+confidence signal.
+
+That experimental direction included ideas such as temporary `tls-host`
+observer rules and matching TLS SNI against DNS-derived names.
+
+**SNI verification was not included in stable v0.12.0.**
+
+Stable v0.12.0 does not perform:
+
+- TLS SNI inspection;
+- SNI-assisted adaptive verification;
+- SNI-based VPN Direct matching.
+
+This roadmap must not be used as evidence that those features exist.
 
 ## Development sequence
 
-0.12.0-dev1:
-configuration schema, routing target abstraction, IPv4-only enforcement,
-VPN Direct persistence and CLI.
+Historical development phases:
 
-Implemented follow-up:
-routing-table-native HEALTH, table targets without mandatory single-egress
-resolution, interface/table first-run setup, strict RouterOS IPv4-only
-setup enforcement, and target-aware status/discovery.
+~~~text
+dev1
+routing target abstraction
+IPv4-only work
+VPN Direct configuration and CLI
 
-Acceptance completed on RouterOS 7.23.3 / ARM64.
+dev2
+port-aware adaptive state
+lazy dynamic data-plane rules
 
-Validated:
-- table-native target and HEALTH;
-- VPN Direct IPv4/CIDR;
-- VPN Direct RouterOS DNS FWD domain/subdomain integration;
-- bypass priority before adaptive rules;
-- sync/repopulation/cleanup behavior;
-- production v0.11.5 remained unchanged.
+dev3
+fast / middle / slow accuracy profiles
 
-Domain VPN Direct requires DNS requests to be visible to RouterOS.
-RouterOS internal `:resolve` does not populate the DNS-backed address-list.
-Strict IPv4-only operation is mandatory because Susanin intentionally does
-not manage IPv6.
+dev4
+migration
+garbage collection
+fail-open
+acceptance hardening
+~~~
 
-0.12.0-dev2:
-port-scoped adaptive state and dynamic data-plane rules.
+SNI-assisted verification was explored during the dev4 planning period but
+was excluded from the final stable scope.
 
-0.12.0-dev3:
-FAST/MIDDLE/SLOW evidence state machines.
+## Final stable result
 
-0.12.0-dev4:
-SNI-assisted verification, migration, garbage collection, fail-open and
-long-running acceptance.
+Stable v0.12.0 ultimately shipped with:
+
+- Interface and Routing table targets;
+- VPN Direct with force-through-VPN semantics;
+- IPv4/CIDR/domain policy;
+- port-aware adaptive identity;
+- lazy per-port rules;
+- fast/middle/slow profiles;
+- migration hardening;
+- bounded runtime GC;
+- fail-open behavior;
+- graceful controller shutdown;
+- staged promotion and rollback;
+- strict IPv4-only scope.
+
+Final field acceptance is documented in:
+
+[TESTED.md](TESTED.md)
+
+Exact frozen release identity is documented in:
+
+[RELEASE_INTEGRITY.md](RELEASE_INTEGRITY.md)
+
+## Superseded status
+
+This roadmap is retained only as development history.
+
+If this file conflicts with stable v0.12.0 documentation, the stable
+documentation and field-acceptance records take precedence.

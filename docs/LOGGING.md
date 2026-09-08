@@ -1,5 +1,4 @@
-
-# Логирование и диагностика Susanin v0.11.5
+# Логирование и диагностика Susanin v0.12.0
 
 Перед созданием Bug Issue рекомендуется сначала собрать
 диагностический пакет внутренними механизмами Susanin.
@@ -31,7 +30,7 @@
 | `error` | важные health/fail-open события |
 | `info` | error + recovery + CONFIRMED |
 | `debug` | info + FAST/SOFT detection |
-| `trace` | принимается config; в v0.11.5 verbosity практически соответствует debug |
+| `trace` | принимается config; в v0.12.0 generated RouterOS decision logging фактически соответствует `debug` |
 
 Default:
 
@@ -120,9 +119,24 @@ tunnel DOWN ... DIRECT
 tunnel UP ...
 ~~~
 
-RouterOS log может содержать destination IP и port.
+RouterOS log может содержать:
 
-Просмотрите данные перед публикацией.
+- protocol;
+- destination IPv4;
+- destination port;
+- interface names;
+- routing-related metadata.
+
+В v0.12.0 adaptive identity является port-aware:
+
+~~~text
+protocol + destination IPv4 + destination port
+~~~
+
+Поэтому при разборе проблемы важно не удалять port/protocol из собственной
+локальной копии логов до завершения диагностики.
+
+Перед публичной публикацией эти данные можно anonymize.
 
 ---
 
@@ -316,6 +330,28 @@ susanin-debug.ndjson.2
 ~~~
 
 ---
+
+# v0.12.0 context перед диагностикой
+
+Перед воспроизведением проблемы полезно сохранить:
+
+~~~text
+susanin version
+susanin target show
+susanin config show
+susanin direct list
+~~~
+
+Особенно важны:
+
+- target mode: `interface` или `routing-table`;
+- выбранный target;
+- resolved egress;
+- accuracy profile: `fast`, `middle` или `slow`;
+- наличие VPN Direct policy.
+
+Это позволяет отличить проблему adaptive detection от ошибки routing target
+или explicit VPN Direct policy.
 
 # ОБЯЗАТЕЛЬНАЯ последовательность перед Bug Issue
 

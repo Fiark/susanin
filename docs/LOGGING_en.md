@@ -1,4 +1,4 @@
-# Susanin v0.11.5 — Logging and Diagnostics
+# Susanin v0.12.0 — Logging and Diagnostics
 
 Susanin has two different diagnostic mechanisms:
 
@@ -25,7 +25,7 @@ Levels:
 | `error` | important health/fail-open events |
 | `info` | error + recovery + CONFIRMED |
 | `debug` | info + FAST/SOFT detection |
-| `trace` | accepted; v0.11.5 verbosity is effectively similar to debug |
+| `trace` | accepted; in v0.12.0 generated RouterOS decision logging is effectively equivalent to `debug` |
 
 Default:
 
@@ -68,6 +68,25 @@ CONFIRMED ... via udp
 tunnel DOWN ... DIRECT
 tunnel UP ...
 ~~~
+
+RouterOS decision logs may contain:
+
+- protocol;
+- destination IPv4;
+- destination port;
+- interface names;
+- routing-related metadata.
+
+In v0.12.0 the adaptive identity is port-aware:
+
+~~~text
+protocol + destination IPv4 + destination port
+~~~
+
+Keep protocol and port information in your local diagnostic copy until the
+problem has been understood.
+
+Anonymize sensitive topology metadata before publishing logs publicly.
 
 # Internal recorder
 
@@ -155,6 +174,28 @@ Supported ranges:
 1..100 MB
 1..10 files
 ~~~
+
+# v0.12.0 context before diagnostics
+
+Before reproducing a problem, record:
+
+~~~text
+susanin version
+susanin target show
+susanin config show
+susanin direct list
+~~~
+
+Important context includes:
+
+- target mode: `interface` or `routing-table`;
+- selected target;
+- resolved egress;
+- accuracy profile: `fast`, `middle` or `slow`;
+- whether VPN Direct policy is present.
+
+This helps distinguish adaptive-detection problems from routing-target or
+explicit VPN Direct policy problems.
 
 # Required runtime Bug Issue capture
 

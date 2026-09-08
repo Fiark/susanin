@@ -3,132 +3,342 @@
 [![C11](https://img.shields.io/badge/C-11-blue)](https://en.cppreference.com/w/c/11)
 [![RouterOS](https://img.shields.io/badge/RouterOS-tested%207.23.3-293239)](https://mikrotik.com/)
 [![Architecture](https://img.shields.io/badge/arch-ARM64-6a5acd)](#requirements)
-[![Stage](https://img.shields.io/badge/status-stable-brightgreen)](https://github.com/Fiark/susanin/releases/tag/v0.11.5)
+[![Status](https://img.shields.io/badge/status-stable-brightgreen)](https://github.com/Fiark/susanin/releases/tag/v0.12.0)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/Fiark/susanin?label=stable%20release)](https://github.com/Fiark/susanin/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/Fiark/susanin/total?label=downloads)](https://github.com/Fiark/susanin/releases)
 
 > [!WARNING]
-> **STABLE v0.11.5**
+> **Stable v0.12.0**
 >
 > Susanin changes RouterOS routing and firewall objects.
-> Back up your MikroTik before installation or upgrade.
+> Back up your MikroTik before installation, upgrade or uninstall.
 >
-> Public target: **ARM64**.
-> Reference test platform: **RouterOS 7.23.3**.
-
-> [!IMPORTANT]
-> ### Current stable release
->
-> **[Susanin v0.11.5](https://github.com/Fiark/susanin/releases/tag/v0.11.5)**
->
-> Required:
->
-> - **[susanin.tar](https://github.com/Fiark/susanin/releases/download/v0.11.5/susanin.tar)**
-> - **[install.rsc](https://github.com/Fiark/susanin/releases/download/v0.11.5/install.rsc)**
->
-> User guide: **[docs/USER_GUIDE_en.md](docs/USER_GUIDE_en.md)**
->
-> Diagnostics: **[docs/LOGGING_en.md](docs/LOGGING_en.md)**
->
-> Before filing a Bug Issue, enable Susanin diagnostics,
-> reproduce the problem and run `diag sample` and `diag errors`.
+> Validated public profile: **ARM64 / RouterOS 7.23.3 / IPv4**.
 
 ![Susanin](docs/images/hero.svg)
 
+Susanin observes MikroTik RouterOS connection-tracking behavior, detects
+destinations that appear unhealthy over the normal DIRECT path, tests them
+through an existing VPN routing target, and temporarily remembers the working
+route.
 
-Susanin watches RouterOS connection-tracking behavior, tests suspicious destinations through a selected route-based tunnel and temporarily remembers whether TCP or UDP works better through that tunnel. It is intentionally not a domain/IP blocklist manager.
+Susanin is **not a VPN client**. WireGuard, AmneziaWG or another route-based
+VPN must already exist.
 
-The project was inspired by [timbrs/amneziawg-mikrotik-c](https://github.com/timbrs/amneziawg-mikrotik-c) and its [Habr article](https://habr.com/ru/articles/1002824/). ChatGPT was actively used as a coding/review assistant; the author is primarily a network/security engineer rather than a professional C developer.
+In v0.12.0 the adaptive identity is:
+
+~~~text
+protocol + destination IPv4 + destination port
+~~~
+
+TCP/443 and UDP/443 to the same IP can therefore have independent routing
+state.
+
+## Stable v0.12.0
+
+Release:
+
+https://github.com/Fiark/susanin/releases/tag/v0.12.0
+
+Required assets:
+
+~~~text
+susanin.tar
+install.rsc
+~~~
+
+Additional release assets:
+
+~~~text
+SHA256SUMS
+uninstall.rsc
+uninstall-controller.rsc
+~~~
+
+Full guide:
+
+[docs/USER_GUIDE_en.md](docs/USER_GUIDE_en.md)
+
+Detailed v0.12.0 release notes:
+
+[docs/RELEASE_NOTES_v0.12.0.md](docs/RELEASE_NOTES_v0.12.0.md)
+
+## What is new in v0.12.0
+
+- routing target **Interface** or **Routing table**;
+- native use of existing RouterOS routing tables;
+- **VPN Direct** explicit routing policy;
+- port-aware adaptive state;
+- separate TCP and UDP learning;
+- lazy per-port mangle rules;
+- `fast`, `middle` and `slow` accuracy profiles;
+- migration hardening from legacy IP-only state;
+- bounded runtime garbage collection;
+- strict IPv4-only operation;
+- graceful SIGTERM/SIGINT controller shutdown;
+- RouterOS data plane remains active while the controller is stopped.
+
+## Architecture
+
+Susanin has two layers.
+
+### RouterOS data plane
+
+Continuous routing logic runs directly in RouterOS:
+
+~~~text
+auto-awg-health
+auto-awg-fast
+auto-awg-detect
+auto-awg-judge
+~~~
+
+Reference installation:
+
+~~~text
+scripts=4
+schedulers=4
+fixed mangle=8
+safety bypass=3
+~~~
+
+Dynamic per-port rules are created lazily and are not part of the fixed
+structural count.
+
+### Controller
+
+`susanin-controller` performs:
+
+- discovery;
+- first-run setup;
+- routing-target selection;
+- rendering and validation;
+- installation;
+- status and structural reconciliation;
+- configuration;
+- VPN Direct policy management;
+- diagnostics;
+- stage/promote/rollback;
+- runtime GC.
+
+User traffic does not traverse the Susanin container.
+
+## Routing targets
+
+v0.12.0 supports two target modes.
+
+### Interface
+
+Select one route-based egress interface.
+
+Susanin may use or provision a dedicated routing table for that interface.
+
+### Routing table
+
+Select an existing RouterOS routing table, for example:
+
+~~~text
+r_to_awg
+~~~
+
+Susanin delegates forwarding to that table instead of reducing the design to
+one gateway/interface.
+
+This preserves RouterOS-native designs such as recursive routing, ECMP,
+multi-egress and custom failover.
+
+For a routing-table target Susanin does not automatically own tunnel NAT.
+
+## Requirements
+
+Validated stable reference:
+
+- ARM64 MikroTik with Containers support;
+- RouterOS 7.23.3 stable;
+- IPv4;
+- interface-list named `LAN`;
+- existing route-based VPN/tunnel;
+- container storage;
+- `susanin.tar` and `install.rsc`.
+
+IPv6 adaptive routing is not included in v0.12.0.
+
 
 ## Quick start
 
-### Requirements
+### 1. Back up RouterOS
 
-- ARM64 MikroTik;
-- RouterOS 7.23.3 is the tested baseline;
-- `container` package/device mode enabled;
-- IPv4 interface-list named `LAN`;
-- an already working route-based VPN/tunnel interface with an IPv4 address.
+Treat the installation as a routing/firewall change.
 
-Upload from the GitHub release:
+### 2. Upload release assets
 
-```text
+Upload to MikroTik Files:
+
+~~~text
 susanin.tar
 install.rsc
-```
+~~~
 
 Optional parser check:
 
-```routeros
+~~~routeros
 /import file-name=install.rsc verbose=yes dry-run
-```
+~~~
 
 Install:
 
-```routeros
+~~~routeros
 /import file-name=install.rsc verbose=yes
-```
+~~~
 
-Wait for:
+### 3. Wait for the controller
 
-```routeros
-/container print where name="susanin-controller"
-```
+Check:
 
-to show `R`, then run:
+~~~routeros
+/container print detail where name="susanin-controller"
+~~~
 
-```routeros
-/container/shell susanin-controller cmd="/usr/local/bin/susanin setup" no-sh timeout=300
-```
+During extraction the container may temporarily show:
 
-Select the tunnel interface. Susanin auto-detects a matching routing table or provisions its own dedicated table/default route, validates the generated RouterOS scripts and transactionally installs the data plane.
+~~~text
+E
+~~~
+
+Wait until it becomes RUNNING.
+
+Stable v0.12.0 should report:
+
+~~~text
+tag="0.12.0"
+arch="arm64"
+root-dir=/susanin-controller-v0120
+~~~
+
+### 4. Run setup
+
+~~~routeros
+/container/shell susanin-controller \
+    cmd="/usr/local/bin/susanin setup" \
+    no-sh \
+    timeout=300
+~~~
+
+Setup offers:
+
+~~~text
+1) Interface
+2) Routing table
+~~~
+
+If you already maintain a dedicated VPN policy-routing table, choose
+**Routing table**.
+
+### 5. Verify installation
+
+Version:
+
+~~~routeros
+/container/shell susanin-controller \
+    cmd="/usr/local/bin/susanin version" \
+    no-sh \
+    timeout=30
+~~~
+
+Expected:
+
+~~~text
+Susanin 0.12.0
+~~~
 
 Status:
 
-```routeros
-/container/shell susanin-controller cmd="/usr/local/bin/susanin status" no-sh timeout=60
-```
-
-Expected after installation:
-
-```text
-Summary: scripts=4/4 schedulers=4/4 mangle=8
-Installation state: detected
-```
-
-Live decisions:
-
-```routeros
-/log print follow-only where message~"AUTO-AWG:"
-```
+~~~routeros
+/container/shell susanin-controller \
+    cmd="/usr/local/bin/susanin status" \
+    no-sh \
+    timeout=60
+~~~
 
 Structural reconciliation:
 
-```routeros
-/container/shell susanin-controller cmd="/usr/local/bin/susanin apply --dry-run" no-sh timeout=60
-```
+~~~routeros
+/container/shell susanin-controller \
+    cmd="/usr/local/bin/susanin apply --dry-run" \
+    no-sh \
+    timeout=60
+~~~
 
-Expected healthy state:
+Healthy reference:
 
-```text
+~~~text
 KEEP=16 CREATE=0 UPDATE=0 BLOCKERS=0
 Result: IN SYNC structurally.
-```
+~~~
+
+## VPN Direct
+
+VPN Direct explicitly forces an IPv4/CIDR/domain through the selected VPN
+routing target without waiting for adaptive learning.
+
+Examples:
+
+~~~text
+susanin direct add ip 1.1.1.1/32
+susanin direct add domain example.com
+susanin direct list
+susanin direct sync
+~~~
+
+Remove entries:
+
+~~~text
+susanin direct remove ip 1.1.1.1/32
+susanin direct remove domain example.com
+~~~
+
+Domain policy depends on DNS visibility in RouterOS.
+
+External DoH, DoT, private DNS or hardcoded IP addresses may bypass domain
+population.
+
+TLS SNI inspection is not included in v0.12.0.
+
+## Accuracy profiles
+
+Available profiles:
+
+~~~text
+fast
+middle
+slow
+~~~
+
+Change profile:
+
+~~~text
+susanin config set accuracy-profile fast
+susanin config set accuracy-profile middle
+susanin config set accuracy-profile slow
+~~~
+
+The final stable field acceptance used `fast`.
 
 ## Upgrading
 
-Replacing the Susanin container does not automatically prove that existing RouterOS data-plane source was upgraded.
+Replacing the controller does not automatically mean the RouterOS data plane
+must be replaced.
 
-After a controller upgrade run:
+After controller upgrade run:
 
 ~~~text
 susanin version
+susanin discover
 susanin validate
 susanin apply --dry-run
 ~~~
 
-If updates are required, use:
+If UPDATE is reported, use:
 
 ~~~text
 susanin stage
@@ -142,34 +352,138 @@ Full procedure:
 
 [docs/UPGRADE_en.md](docs/UPGRADE_en.md)
 
-## Diagnostics before opening a Bug Issue
+## Diagnostics
 
-Collect a diagnostic capture first:
+Before filing a technical issue:
 
 ~~~text
 susanin diag start
+
 reproduce the problem
+
 susanin diag sample
 susanin diag errors
 susanin status
 susanin apply --dry-run
+
 susanin diag stop
 ~~~
 
-See [docs/LOGGING_en.md](docs/LOGGING_en.md).
+See:
 
-Never upload RouterOS backups, `show-sensitive` exports,
-private keys, passwords or `susanin-secrets/routeros_password`.
+[docs/LOGGING_en.md](docs/LOGGING_en.md)
 
+Never publish RouterOS backups, `show-sensitive` exports, machine-secret
+contents, private keys or passwords.
 
-## Architecture
+## Controller shutdown
 
-The per-second data plane stays in RouterOS scripts. The C11 container is only a control plane for discovery, rendering, validation, installation, status and upgrades. If the controller stops, the RouterOS data plane keeps running.
+v0.12.0 handles SIGTERM and SIGINT explicitly.
 
-The bootstrap does not ask for a RouterOS username/password. It creates an isolated controller network, generates a random machine secret, verifies it before synchronizing an internal `susanin-agent`, and mounts the secret as a file instead of an environment variable.
+A normal RouterOS container stop should log:
 
-See the Russian [README.md](README.md) for the full documentation and [SECURITY.md](SECURITY.md) for the security model.
+~~~text
+Susanin controller stopping gracefully.
+~~~
+
+The already installed RouterOS data plane remains active while the controller
+is stopped.
+
+## Uninstall
+
+Full uninstall:
+
+~~~routeros
+/import file-name=uninstall.rsc verbose=yes
+~~~
+
+This removes Susanin-owned control-plane and adaptive RouterOS objects.
+
+The selected VPN/tunnel itself is preserved.
+
+Controller-only uninstall:
+
+~~~routeros
+/import file-name=uninstall-controller.rsc verbose=yes
+~~~
+
+This preserves the installed RouterOS adaptive data plane.
+
+## Stable acceptance
+
+Final v0.12.0 acceptance includes:
+
+~~~text
+ARM64_RUNTIME=PASS
+API_AUTH=PASS
+FRESH_BOOTSTRAP=PASS
+FRESH_SETUP=PASS
+STRUCTURAL_SYNC=PASS
+
+TABLE_NATIVE_TARGET=PASS
+
+VPN_DIRECT_IPV4=PASS
+VPN_DIRECT_DOMAIN=PASS
+VPN_DIRECT_PRIORITY=PASS
+
+GRACEFUL_SIGTERM=PASS
+RESTART_AFTER_SIGTERM=PASS
+DATA_PLANE_PRESERVED=PASS
+
+FULL_UNINSTALL=PASS
+API_STATE_RESTORED=PASS
+
+INDEPENDENT_AWG_PRESERVED=PASS
+INDEPENDENT_ROUTE_PRESERVED=PASS
+INDEPENDENT_NAT_PRESERVED=PASS
+
+FRESH_REINSTALL=PASS
+GC_IDENTICAL=PASS
+~~~
+
+See:
+
+[docs/TESTED.md](docs/TESTED.md)
+
+## Release integrity
+
+The stable v0.12.0 container is a frozen field-tested artifact.
+
+Artifact source:
+
+~~~text
+d53517dfd6daccb7073517661138d79c573cac46
+~~~
+
+Exact `susanin.tar`:
+
+~~~text
+size:
+4199936 bytes
+
+SHA256:
+81f982953e3b4d75c343b7729685938d7fc21105ea2df2393ca49117e0aadb2f
+~~~
+
+The stable tag does not trigger an automatic rebuild of this artifact.
+
+See:
+
+[docs/RELEASE_INTEGRITY.md](docs/RELEASE_INTEGRITY.md)
+
+## Documentation
+
+- [Russian README](README.md)
+- [English user guide](docs/USER_GUIDE_en.md)
+- [Russian full user guide](docs/USER_GUIDE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Upgrade](docs/UPGRADE_en.md)
+- [Logging and diagnostics](docs/LOGGING_en.md)
+- [Tested scenarios](docs/TESTED.md)
+- [Release integrity](docs/RELEASE_INTEGRITY.md)
+- [Security policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).
