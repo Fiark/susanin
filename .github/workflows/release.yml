@@ -1,39 +1,42 @@
-name: Release ARM64 artifacts
+name: Verify frozen release
 
 on:
-  push:
-    tags:
-      # Internal vX.Y.Z-devN tags freeze accepted development milestones
-      # but must not invoke the production release pipeline.
-      - 'v*'
-      - '!v*-dev*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag to build (example: v0.12.0-rc1)'
+        description: 'Existing release tag to verify'
         required: true
+        default: 'v0.12.0'
+        type: string
+      artifact_source_sha:
+        description: 'Commit from which the frozen runtime artifact was built'
+        required: true
+        default: 'd53517dfd6daccb7073517661138d79c573cac46'
+        type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  group: verify-release-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
-  release:
+  verify:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout release tag
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ inputs.tag }}
 
-      - name: Validate release version plumbing
+      - name: Verify frozen release source
         shell: bash
         env:
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          TAG: ${{ inputs.tag }}
+          SOURCE_SHA: ${{ inputs.artifact_source_sha }}
         run: |
           set -euo pipefail
 
@@ -41,6 +44,56 @@ jobs:
             echo "ERROR: invalid release tag: $TAG"
             exit 1
           fi
+
+          git rev-parse --verify "${TAG}^{commit}" >/dev/null
+          git rev-parse --verify "${SOURCE_SHA}^{commit}" >/dev/null
+
+          TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
+          SOURCE_COMMIT="$(git rev-parse "${SOURCE_SHA}^{commit}")"
+
+          echo "Release tag         : $TAG"
+          echo "Release tag commit  : $TAG_COMMIT"
+          echo "Artifact source SHA : $SOURCE_COMMIT"
+
+          if ! git merge-base --is-ancestor "$SOURCE_COMMIT" "$TAG_COMMIT"; then
+            echo "ERROR: artifact source is not an ancestor of the release tag."
+            exit 1
+          fi
+
+          echo
+          echo "Checking frozen runtime/build inputs..."
+
+          PROTECTED_PATHS=(
+            .dockerignore
+            Dockerfile
+            Makefile
+            src
+            templates
+            bootstrap
+          )
+
+          if ! git diff --quiet \
+            "$SOURCE_COMMIT" \
+            "$TAG_COMMIT" \
+            -- "${PROTECTED_PATHS[@]}"; then
+
+            echo "ERROR: frozen runtime/build inputs changed after artifact build."
+            echo
+            git diff --name-status \
+              "$SOURCE_COMMIT" \
+              "$TAG_COMMIT" \
+              -- "${PROTECTED_PATHS[@]}"
+            exit 1
+          fi
+
+          echo "PASS: frozen runtime/build inputs are unchanged."
+
+      - name: Verify release version plumbing
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
 
           VERSION="${TAG#v}"
 
@@ -74,7 +127,6 @@ jobs:
               | tr -d ' '
           )"
 
-          echo "Release tag              : $TAG"
           echo "Release version          : $VERSION"
           echo "Source version           : $SOURCE_VERSION"
           echo "Bootstrap header version : $BOOTSTRAP_HEADER_VERSION"
@@ -94,168 +146,70 @@ jobs:
             exit 1
           fi
 
-          echo "PASS: release version plumbing is consistent"
-
-      - uses: docker/setup-qemu-action@v4
-        with:
-          platforms: arm64
-
-      - uses: docker/setup-buildx-action@v4
-
-      - name: Build RouterOS ARM64 image
-        shell: bash
-        env:
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          set -euxo pipefail
-
-          VERSION="${TAG#v}"
-
-          rm -rf dist
-          mkdir -p dist
-
-          docker buildx build \
-            --platform linux/arm64 \
-            --no-cache \
-            -t "susanin:${VERSION}" \
-            --output type=docker,dest=dist/susanin.tar \
-            .
-
-          cp bootstrap/install.rsc dist/install.rsc
-          cp bootstrap/uninstall.rsc dist/uninstall.rsc
-          cp bootstrap/uninstall-controller.rsc dist/uninstall-controller.rsc
-
-          (
-            cd dist
-            sha256sum \
-              susanin.tar \
-              install.rsc \
-              uninstall.rsc \
-              uninstall-controller.rsc \
-              > SHA256SUMS
-          )
-
-      - name: Validate exact ARM64 release image
-        shell: bash
-        env:
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          set -euo pipefail
-
-          VERSION="${TAG#v}"
-
-          docker load -i dist/susanin.tar
-
-          PLATFORM="$(
-            docker image inspect "susanin:${VERSION}" \
-              --format '{{.Os}}/{{.Architecture}}'
-          )"
-
-          echo "Image platform: $PLATFORM"
-
-          if [[ "$PLATFORM" != "linux/arm64" ]]; then
-            echo "ERROR: release image is not linux/arm64"
-            exit 1
-          fi
-
-          VERSION_OUTPUT="$(
-            docker run \
-              --rm \
-              --platform linux/arm64 \
-              "susanin:${VERSION}" \
-              version
-          )"
-
-          echo "Binary output: $VERSION_OUTPUT"
-
-          if [[ "$VERSION_OUTPUT" != "Susanin ${VERSION}" ]]; then
-            echo "ERROR: binary version mismatch"
-            exit 1
-          fi
-
-          (
-            cd dist
-            sha256sum -c SHA256SUMS
-          )
-
-          echo "PASS: exact release image validated"
-
-      - name: Create draft, attach assets, then publish
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
-        run: |
-          set -euo pipefail
-
-          VERSION="${TAG#v}"
           NOTES_FILE="docs/RELEASE_NOTES_v${VERSION}.md"
 
-          if [[ "$VERSION" == *-* ]]; then
-            RELEASE_KIND="prerelease"
-            TITLE="$TAG — prerelease"
-          else
-            RELEASE_KIND="stable"
-            TITLE="$TAG"
+          if [[ ! -f "$NOTES_FILE" ]]; then
+            echo "ERROR: release notes missing: $NOTES_FILE"
+            exit 1
           fi
 
-          echo "Release kind: $RELEASE_KIND"
-          echo "Release title: $TITLE"
+          echo "PASS: release version plumbing is consistent."
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            IS_DRAFT="$(
-              gh release view "$TAG" \
-                --json isDraft \
-                --jq '.isDraft'
-            )"
+      - name: Verify v0.12.0 frozen identity
+        if: ${{ inputs.tag == 'v0.12.0' }}
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.artifact_source_sha }}
+        run: |
+          set -euo pipefail
 
-            if [[ "$IS_DRAFT" != "true" ]]; then
-              echo "ERROR: published release already exists."
-              echo "Refusing to replace or clobber published release assets."
-              exit 1
-            fi
+          EXPECTED_SOURCE_SHA="d53517dfd6daccb7073517661138d79c573cac46"
 
-            echo "Existing DRAFT release found; safe to resume asset upload."
-          else
-            if [[ -f "$NOTES_FILE" ]]; then
-              if [[ "$RELEASE_KIND" == "prerelease" ]]; then
-                gh release create "$TAG" \
-                  --title "$TITLE" \
-                  --notes-file "$NOTES_FILE" \
-                  --draft \
-                  --prerelease
-              else
-                gh release create "$TAG" \
-                  --title "$TITLE" \
-                  --notes-file "$NOTES_FILE" \
-                  --draft
-              fi
-            else
-              if [[ "$RELEASE_KIND" == "prerelease" ]]; then
-                gh release create "$TAG" \
-                  --title "$TITLE" \
-                  --generate-notes \
-                  --draft \
-                  --prerelease
-              else
-                gh release create "$TAG" \
-                  --title "$TITLE" \
-                  --generate-notes \
-                  --draft
-              fi
-            fi
+          EXPECTED_TAR_SIZE="4199936"
+          EXPECTED_TAR_SHA256="81f982953e3b4d75c343b7729685938d7fc21105ea2df2393ca49117e0aadb2f"
+
+          EXPECTED_INSTALL_SHA256="192104fc8012958dc511f2f5e7db5ff58be9b7727a287fcfae5e2854407be1c0"
+          EXPECTED_UNINSTALL_SHA256="6067daacdfb7a047aa4791d2d7d46796dc3a26102c6d9e1e1b1da2f5f40bec98"
+          EXPECTED_UNINSTALL_CONTROLLER_SHA256="c5b6751f7d0907cc5db2e904ee32832e92446adfff3e9f9b64d2343ba522d4d3"
+
+          SOURCE_COMMIT="$(git rev-parse "${SOURCE_SHA}^{commit}")"
+
+          if [[ "$SOURCE_COMMIT" != "$EXPECTED_SOURCE_SHA" ]]; then
+            echo "ERROR: v0.12.0 artifact source SHA mismatch."
+            exit 1
           fi
 
-          # --clobber is allowed only while the release is still a draft.
-          gh release upload "$TAG" dist/* --clobber
+          echo "${EXPECTED_INSTALL_SHA256}  bootstrap/install.rsc" \
+            | sha256sum -c -
 
-          if [[ "$RELEASE_KIND" == "stable" ]]; then
-            gh release edit "$TAG" \
-              --draft=false \
-              --latest
-          else
-            gh release edit "$TAG" \
-              --draft=false
-          fi
+          echo "${EXPECTED_UNINSTALL_SHA256}  bootstrap/uninstall.rsc" \
+            | sha256sum -c -
 
-          echo "PASS: release published after all assets were attached"
+          echo "${EXPECTED_UNINSTALL_CONTROLLER_SHA256}  bootstrap/uninstall-controller.rsc" \
+            | sha256sum -c -
+
+          echo
+          echo "Frozen v0.12.0 runtime identity:"
+          echo "  artifact source : $EXPECTED_SOURCE_SHA"
+          echo "  susanin.tar size: $EXPECTED_TAR_SIZE bytes"
+          echo "  susanin.tar SHA : $EXPECTED_TAR_SHA256"
+          echo
+          echo "PASS: repository-side v0.12.0 frozen identity verified."
+          echo "NOTE: susanin.tar itself is NOT rebuilt by this workflow."
+
+      - name: Verification summary
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+          SOURCE_SHA: ${{ inputs.artifact_source_sha }}
+        run: |
+          {
+            echo "## Frozen release verification"
+            echo
+            echo "- Tag: \`$TAG\`"
+            echo "- Artifact source: \`$SOURCE_SHA\`"
+            echo "- Runtime/build inputs unchanged: PASS"
+            echo "- Version plumbing: PASS"
+            echo "- Artifact rebuild performed: NO"
+            echo "- Release publication performed: NO"
+          } >> "$GITHUB_STEP_SUMMARY"
