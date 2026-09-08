@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "apply.h"
 #include "config.h"
 #include "diag.h"
@@ -18,9 +20,63 @@
 #include "gc.h"
 #include "version.h"
 
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+
+static volatile sig_atomic_t daemon_stop_requested = 0;
+
+static void daemon_signal_handler(
+    int signo
+) {
+    (void)signo;
+
+    daemon_stop_requested = 1;
+}
+
+static int daemon_install_signal_handlers(void) {
+    struct sigaction sa;
+
+    memset(
+        &sa,
+        0,
+        sizeof(sa)
+    );
+
+    sa.sa_handler =
+        daemon_signal_handler;
+
+    if (
+        sigemptyset(
+            &sa.sa_mask
+        ) < 0
+    ) {
+        return -1;
+    }
+
+    if (
+        sigaction(
+            SIGTERM,
+            &sa,
+            NULL
+        ) < 0
+    ) {
+        return -1;
+    }
+
+    if (
+        sigaction(
+            SIGINT,
+            &sa,
+            NULL
+        ) < 0
+    ) {
+        return -1;
+    }
+
+    return 0;
+}
 
 static void usage(
     const char *argv0
@@ -513,11 +569,22 @@ int main(
     if (daemon) {
         app_config_t daemon_cfg;
 
-        if (
+        int daemon_cfg_loaded =
             config_load_local(
                 &daemon_cfg
-            ) == 0
+            ) == 0;
+
+        if (
+            daemon_install_signal_handlers() < 0
         ) {
+            perror(
+                "install daemon signal handlers"
+            );
+
+            return 1;
+        }
+
+        if (daemon_cfg_loaded) {
             (void)diag_event(
                 &daemon_cfg,
                 "controller_start",
@@ -540,10 +607,33 @@ int main(
 
         fflush(stdout);
 
-        for (;;) {
-            sleep(SUSANIN_GC_INTERVAL_SECONDS);
+        while (!daemon_stop_requested) {
+            (void)sleep(
+                SUSANIN_GC_INTERVAL_SECONDS
+            );
+
+            if (daemon_stop_requested) {
+                break;
+            }
+
             (void)susanin_gc_daemon_tick();
         }
+
+        printf(
+            "Susanin controller stopping gracefully.\n"
+        );
+
+        fflush(stdout);
+
+        if (daemon_cfg_loaded) {
+            (void)diag_event(
+                &daemon_cfg,
+                "controller_stop",
+                "Susanin controller daemon stopped gracefully"
+            );
+        }
+
+        return 0;
     }
 
     app_config_t cfg;
