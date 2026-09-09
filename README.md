@@ -230,6 +230,401 @@ susanin config set accuracy-profile slow
 
 `fast` — reference profile финального field acceptance v0.12.0.
 
+## Важно: как применяются изменения после установки
+
+> [!IMPORTANT]
+> Не каждая команда Susanin сразу изменяет работающий RouterOS data plane.
+>
+> Например:
+>
+> ~~~text
+> susanin config set accuracy-profile middle
+> ~~~
+>
+> **сохраняет новый desired profile, но сама по себе ещё не переключает
+> работающие RouterOS scripts на `middle`.**
+>
+> Для настроек, которые встраиваются в generated RouterOS source, требуется
+> безопасный lifecycle `validate -> dry-run -> stage -> promote -> verify`.
+
+### Что применяется сразу, а что требует promotion
+
+| Команда / изменение | Что происходит сразу | Нужны дополнительные шаги |
+|---|---|---|
+| `config set accuracy-profile ...` | сохраняется desired profile | **Да:** полный `validate → dry-run → stage → promote → verify` |
+| `config set log-level ...` | сохраняется desired log level | **Да:** тот же data-plane lifecycle |
+| `config set diagnostics on/off` | controller setting применяется сразу | Нет |
+| `config set diagnostic-max-size-mb ...` | rotation setting применяется сразу | Нет |
+| `config set diagnostic-max-files ...` | rotation setting применяется сразу | Нет |
+| `target set interface ...` | сохраняется target; при необходимости может быть создана Susanin routing table/route | **Да:** `target show → discover → direct sync → validate → apply --dry-run`, затем `stage/promote` при UPDATE |
+| `target set routing-table ...` | сохраняется выбранная table и resolved egress | **Да:** тот же target lifecycle |
+| `direct add ...` | policy сохраняется и RouterOS автоматически синхронизируется | Нет; проверить `direct list` |
+| `direct remove ...` | policy удаляется и RouterOS автоматически синхронизируется | Нет; проверить `direct list` |
+| `direct sync` | VPN Direct objects перестраиваются сразу | Нет |
+| `diag start/stop/sample/errors` | выполняется сразу | Нет |
+| `setup` | first-run target + validation/install выполняются одной процедурой | Только post-install verification |
+| `install --dry-run` | ничего не меняет | Это только preflight |
+| `install` | выполняет **fresh install**; существующий полный data plane не обновляет | После установки проверить `status` + `apply --dry-run` |
+| `stage` | создаёт inert stage scripts | Production ещё **не изменён**; нужен `promote --dry-run`, затем `promote` |
+| `promote --dry-run` | ничего не меняет | Проверить `Safety gates: PASS` |
+| `promote` | production data plane переключается сразу | Обязательно post-promotion verification |
+| `stage-clean` | удаляет inert stage objects | Нет; production не меняется |
+| `rollback` | rollback выполняется сразу | Обязательно `snapshot → status → apply --dry-run` |
+| `gc` | bounded runtime cleanup выполняется сразу | Нет |
+| `daemon` | запускает long-running controller/GC loop | Это не команда применения конфигурации |
+| обновление controller/container | меняется control plane | **Да:** проверить data plane через `validate` + `apply --dry-run`, при UPDATE — `stage/promote` |
+
+Команды просмотра и проверки не изменяют production data plane:
+
+~~~text
+susanin version
+susanin discover
+susanin plan
+susanin status
+susanin snapshot
+susanin render
+susanin apply --dry-run
+susanin target show
+susanin target list
+susanin direct list
+susanin config show
+susanin diag status
+~~~
+
+`susanin validate` также не изменяет production source: он использует
+временные validator objects и после проверки удаляет их.
+
+Поддерживаются также алиасы:
+
+~~~text
+config key: accuracy = accuracy-profile
+profile:    mid = middle
+target:     target set table = target set routing-table
+~~~
+
+В документации рекомендуется использовать полные canonical names.
+
+### Универсальный lifecycle изменения RouterOS data plane
+
+Если настройка влияет на generated RouterOS scripts, используйте:
+
+~~~text
+susanin validate
+susanin apply --dry-run
+~~~
+
+Если результат:
+
+~~~text
+UPDATE=0
+BLOCKERS=0
+Result: IN SYNC structurally.
+~~~
+
+ничего больше применять не нужно.
+
+Если `UPDATE > 0`:
+
+~~~text
+susanin stage
+susanin promote --dry-run
+~~~
+
+Продолжайте только если:
+
+~~~text
+Safety gates: PASS
+~~~
+
+Затем:
+
+~~~text
+susanin promote
+~~~
+
+После promotion обязательно:
+
+~~~text
+susanin status
+susanin snapshot
+susanin apply --dry-run
+~~~
+
+Финальная нормальная проверка:
+
+~~~text
+KEEP=16 CREATE=0 UPDATE=0 BLOCKERS=0
+Result: IN SYNC structurally.
+~~~
+
+> [!WARNING]
+> `promote` является границей совместимости adaptive runtime state.
+>
+> При promotion Susanin очищает несовместимое текущее обучение:
+>
+> - port-aware WATCH/TEST/OK/COOLDOWN state;
+> - временные profile evidence;
+> - lazy per-port mangle rules;
+> - adaptive connection marks.
+>
+> После переключения профиля или другого data-plane изменения Susanin
+> начинает adaptive learning заново.
+
+### Полный пример: переключить `fast` → `middle`
+
+1. Сохранить новый desired profile:
+
+~~~text
+susanin config set accuracy-profile middle
+~~~
+
+2. Проверить:
+
+~~~text
+susanin config show
+~~~
+
+Нужно увидеть:
+
+~~~text
+Accuracy profile : middle
+~~~
+
+3. Проверить generated source:
+
+~~~text
+susanin validate
+~~~
+
+Нормально:
+
+~~~text
+PASS=4 FAIL=0
+Production scripts changed: NO
+~~~
+
+4. Посмотреть необходимые изменения:
+
+~~~text
+susanin apply --dry-run
+~~~
+
+Для смены профиля обычно будут изменены четыре generated scripts.
+
+5. Создать inert stage:
+
+~~~text
+susanin stage
+~~~
+
+6. Проверить promotion:
+
+~~~text
+susanin promote --dry-run
+~~~
+
+Продолжать только при:
+
+~~~text
+Safety gates: PASS
+~~~
+
+7. Переключить production:
+
+~~~text
+susanin promote
+~~~
+
+8. Проверить результат:
+
+~~~text
+susanin status
+susanin snapshot
+susanin apply --dry-run
+~~~
+
+До строки:
+
+~~~text
+KEEP=16 CREATE=0 UPDATE=0 BLOCKERS=0
+Result: IN SYNC structurally.
+~~~
+
+### Изменение `log-level`
+
+`log-level` также встраивается renderer'ом в RouterOS scripts.
+
+Поэтому:
+
+~~~text
+susanin config set log-level debug
+~~~
+
+ещё не означает, что production scripts уже используют новый logging level.
+
+После изменения выполните тот же lifecycle:
+
+~~~text
+susanin validate
+susanin apply --dry-run
+susanin stage
+susanin promote --dry-run
+susanin promote
+susanin status
+susanin snapshot
+susanin apply --dry-run
+~~~
+
+`promote` запускайте только после `Safety gates: PASS`.
+
+### Смена routing target
+
+Например:
+
+~~~text
+susanin target set routing-table r_to_awg
+~~~
+
+или:
+
+~~~text
+susanin target set interface wg-vpn
+~~~
+
+После смены target обязательно:
+
+~~~text
+susanin target show
+susanin discover
+susanin direct sync
+susanin validate
+susanin apply --dry-run
+~~~
+
+`direct sync` нужен здесь потому, что VPN Direct должен использовать новый
+routing target.
+
+Если `apply --dry-run` показывает `UPDATE > 0`:
+
+~~~text
+susanin stage
+susanin promote --dry-run
+susanin promote
+~~~
+
+И после этого:
+
+~~~text
+susanin status
+susanin snapshot
+susanin apply --dry-run
+~~~
+
+### VPN Direct: применяется сразу
+
+Здесь поведение проще.
+
+Команды:
+
+~~~text
+susanin direct add ip 1.1.1.1/32
+susanin direct add domain example.com
+
+susanin direct remove ip 1.1.1.1/32
+susanin direct remove domain example.com
+~~~
+
+сами сохраняют persistent policy и выполняют RouterOS sync.
+
+`stage/promote` для обычного `direct add/remove` не требуется.
+
+Проверка:
+
+~~~text
+susanin direct list
+~~~
+
+Отдельный:
+
+~~~text
+susanin direct sync
+~~~
+
+нужен после смены routing target или если требуется вручную восстановить
+RouterOS VPN Direct objects из сохранённой policy.
+
+### Diagnostics: применяются сразу
+
+Эти команды выполняются сразу и не требуют data-plane promotion:
+
+~~~text
+susanin diag status
+susanin diag start
+susanin diag sample
+susanin diag errors
+susanin diag stop
+~~~
+
+Также controller-side параметры:
+
+~~~text
+susanin config set diagnostics on
+susanin config set diagnostics off
+susanin config set diagnostic-max-size-mb <1..100>
+susanin config set diagnostic-max-files <1..10>
+~~~
+
+не требуют `stage/promote`.
+
+Исключение — `log-level`, потому что он влияет на generated RouterOS source.
+
+### После rollback
+
+После:
+
+~~~text
+susanin rollback
+~~~
+
+обязательно проверьте:
+
+~~~text
+susanin snapshot
+susanin status
+susanin apply --dry-run
+~~~
+
+Не считайте rollback завершённым только по факту выполнения команды.
+
+### После обновления controller
+
+Новая версия container и новая версия RouterOS data plane — разные вещи.
+
+После обновления controller выполните:
+
+~~~text
+susanin version
+susanin discover
+susanin validate
+susanin apply --dry-run
+~~~
+
+Если `UPDATE=0`, data plane уже соответствует desired state.
+
+Если есть UPDATE:
+
+~~~text
+susanin stage
+susanin promote --dry-run
+susanin promote
+susanin status
+susanin snapshot
+susanin apply --dry-run
+~~~
+
+Полная процедура обновления:
+[docs/UPGRADE.md](docs/UPGRADE.md).
+
 ## Требования
 
 Проверенная конфигурация stable v0.12.0:
@@ -489,6 +884,8 @@ susanin config show
 susanin config set accuracy-profile fast|middle|slow
 susanin config set log-level quiet|error|info|debug|trace
 susanin config set diagnostics on|off
+susanin config set diagnostic-max-size-mb <1..100>
+susanin config set diagnostic-max-files <1..10>
 ~~~
 
 ### Validation
@@ -796,3 +1193,4 @@ Susanin разрабатывался как практический инстр�
 ## Лицензия
 
 MIT — см. [LICENSE](LICENSE).
+\n
