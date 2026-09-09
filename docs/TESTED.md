@@ -32,6 +32,90 @@ NAT comment:     AWG selected traffic masquerade
 This infrastructure was intentionally treated as external and not owned by
 Susanin.
 
+## RouterOS 7.24.2 post-release compatibility
+
+On **2026-09-09**, the same field router was upgraded in place from the
+v0.12.0 reference RouterOS 7.23.3 environment to:
+
+~~~text
+RouterOS:      7.24.2
+Architecture:  ARM64
+Board:         S53UG+5HaxD2HaxD&FG621-EA
+Target mode:   routing-table
+Routing table: r_to_awg
+Egress:        wg-awg-proxy
+Profile:       fast
+~~~
+
+Susanin was not reinstalled and the RouterOS data plane was not promoted or
+regenerated as part of the RouterOS upgrade.
+
+Post-upgrade `status` verified:
+
+~~~text
+scripts=4/4
+schedulers=4/4
+fixed-mangle=8/8
+fixed-duplicates=0
+unknown AUTO-AWG rules=0
+Installation state: detected
+Adaptive migration state: clean
+~~~
+
+The selected target remained resolved and operational:
+
+~~~text
+Target: routing-table r_to_awg
+Routing table: r_to_awg
+Egress: wg-awg-proxy running=true disabled=false type=wg
+~~~
+
+The exact FAST production fingerprints were unchanged:
+
+~~~text
+auto-awg-health    bytes=6148   fnv1a64=cafdf828c49d2946
+auto-awg-fast      bytes=26098  fnv1a64=0c9672d93a6a4e85
+auto-awg-detect    bytes=41519  fnv1a64=0ee9c8e6708bc6e8
+auto-awg-judge     bytes=16840  fnv1a64=72733543f4561160
+~~~
+
+Generated-source validation on RouterOS 7.24.2 completed successfully:
+
+~~~text
+Validation summary: PASS=4 FAIL=0
+Production scripts changed: NO
+Temporary validator objects remaining should be: 0
+~~~
+
+Structural reconciliation also remained clean:
+
+~~~text
+KEEP=16 CREATE=0 UPDATE=0 BLOCKERS=0
+Result: IN SYNC structurally.
+~~~
+
+Normal adaptive data-plane operation was observed after the RouterOS upgrade.
+
+Compatibility result:
+
+~~~text
+ROUTEROS_7_24_2_IN_PLACE_UPGRADE=PASS
+ROUTEROS_7_24_2_API_AUTH=PASS
+ROUTEROS_7_24_2_STATUS=PASS
+ROUTEROS_7_24_2_FAST_FINGERPRINTS=PASS
+ROUTEROS_7_24_2_VALIDATE=PASS
+ROUTEROS_7_24_2_STRUCTURAL_SYNC=PASS
+ROUTEROS_7_24_2_DATA_PLANE_SMOKE=PASS
+~~~
+
+This is a **post-release compatibility validation**, not a replacement for
+the original v0.12.0 full acceptance platform.
+
+The complete fresh bootstrap, first-run setup, uninstall, API restoration,
+fresh reinstall and independent-infrastructure preservation acceptance
+documented below was performed on RouterOS **7.23.3** and was not repeated
+from a clean state on RouterOS 7.24.2.
+
 ## Frozen artifact identity
 
 Accepted runtime source:

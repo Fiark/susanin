@@ -2,12 +2,17 @@
 > **Susanin изменяет RouterOS firewall/routing objects.**
 > Перед установкой или обновлением обязательно сделайте backup RouterOS.
 >
-> Stable v0.12.0 проверен на **ARM64 / RouterOS 7.23.3**.
+> Полный release acceptance stable v0.12.0 выполнен на
+> **ARM64 / RouterOS 7.23.3**.
+>
+> Дополнительно **9 сентября 2026** выполнен post-release field compatibility
+> test на **RouterOS 7.24.2**: Susanin продолжил работать после обновления
+> RouterOS без переустановки и без изменения production data plane.
 
 # Сусанин — адаптивная маршрутизация через VPN для MikroTik
 
 [![C11](https://img.shields.io/badge/C-11-blue)](https://en.cppreference.com/w/c/11)
-[![RouterOS](https://img.shields.io/badge/RouterOS-tested%207.23.3-293239)](https://mikrotik.com/)
+[![RouterOS](https://img.shields.io/badge/RouterOS-release%207.23.3%20%7C%20compat%207.24.2-293239)](https://mikrotik.com/)
 [![Architecture](https://img.shields.io/badge/arch-ARM64-6a5acd)](#требования)
 [![Status](https://img.shields.io/badge/status-stable-brightgreen)](https://github.com/Fiark/susanin/releases/tag/v0.12.0)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -73,6 +78,60 @@ route-based VPN должен быть настроен заранее.
 - сохранение RouterOS data plane при остановке controller.
 
 Подробно: [Release Notes v0.12.0](docs/RELEASE_NOTES_v0.12.0.md).
+
+### Совместимость с RouterOS 7.24.2
+
+После обновления reference MikroTik с RouterOS 7.23.3 до **RouterOS 7.24.2**
+Susanin v0.12.0 был повторно проверен в работающей конфигурации.
+
+Проверено:
+
+~~~text
+API_AUTH=PASS
+STATUS=PASS
+FAST_FINGERPRINTS=PASS
+VALIDATE=PASS
+STRUCTURAL_SYNC=PASS
+DATA_PLANE_SMOKE=PASS
+~~~
+
+Дополнительно подтверждено:
+
+~~~text
+scripts=4/4
+schedulers=4/4
+fixed-mangle=8/8
+fixed-duplicates=0
+unknown AUTO-AWG rules=0
+Adaptive migration state: clean
+
+Validation summary: PASS=4 FAIL=0
+
+KEEP=16 CREATE=0 UPDATE=0 BLOCKERS=0
+Result: IN SYNC structurally.
+~~~
+
+FAST production fingerprints после обновления остались точно теми же:
+
+~~~text
+auto-awg-health   6148   cafdf828c49d2946
+auto-awg-fast     26098  0c9672d93a6a4e85
+auto-awg-detect   41519  0ee9c8e6708bc6e8
+auto-awg-judge    16840  72733543f4561160
+~~~
+
+Обновление RouterOS не потребовало reinstall или `promote`.
+
+> [!NOTE]
+> RouterOS **7.23.3** остаётся платформой полного v0.12.0 release acceptance:
+> на ней выполнялись fresh bootstrap, setup, uninstall, reinstall и вся
+> финальная acceptance matrix.
+>
+> RouterOS **7.24.2** имеет статус **post-release field compatibility tested**.
+> Полный fresh-install/uninstall/reinstall acceptance на 7.24.2 отдельно
+> не повторялся.
+
+Подробнее: [docs/TESTED.md](docs/TESTED.md).
 
 ## Как это устроено
 
